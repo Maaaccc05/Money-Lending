@@ -1,14 +1,42 @@
-const express = require('express');
-const router = express.Router();
-const { generateInterest, getPendingInterest, receiveInterestPayment, getPaymentsByLoan, getInterestByLoan } = require('../controllers/interestController');
-const { protect } = require('../middleware/auth');
+import { Router } from 'express';
+import { body, param } from 'express-validator';
+import interestController from '../controllers/interestController.js';
+import authMiddleware from '../middleware/authMiddleware.js';
+import handleValidationErrors from '../middleware/validationMiddleware.js';
 
-router.use(protect);
+const router = Router();
 
-router.post('/generate/:loanId', generateInterest);
-router.get('/pending', getPendingInterest);
-router.post('/receive', receiveInterestPayment);
-router.get('/loan/:loanId', getInterestByLoan);
-router.get('/payments/:loanId', getPaymentsByLoan);
+// Protect all routes with authentication
+router.use(authMiddleware);
 
-module.exports = router;
+router.post(
+  '/generate/:loanId',
+  [
+    param('loanId').isMongoId().withMessage('Invalid loan ID'),
+    body('startDate').isISO8601().withMessage('Valid start date is required'),
+  ],
+  handleValidationErrors,
+  interestController.generateInterest
+);
+
+router.get('/pending', interestController.getPendingInterest);
+
+router.post(
+  '/record-payment',
+  [
+    body('interestRecordId').isMongoId().withMessage('Invalid interest record ID'),
+    body('amountPaid')
+      .isNumeric()
+      .withMessage('Valid amount is required')
+      .toFloat(),
+    body('paymentDate').optional().isISO8601(),
+  ],
+  handleValidationErrors,
+  interestController.recordInterestPayment
+);
+
+router.get('/payments', interestController.getInterestPayments);
+
+router.get('/:loanId', interestController.getInterestRecordsByLoan);
+
+export default router;

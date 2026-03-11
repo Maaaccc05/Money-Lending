@@ -1,9 +1,20 @@
-const express = require('express');
-const router = express.Router();
-const { login, getMe } = require('../controllers/authController');
-const { protect } = require('../middleware/auth');
+import { Router } from 'express';
+import { body } from 'express-validator';
+import authController from '../controllers/authController.js';
+import handleValidationErrors from '../middleware/validationMiddleware.js';
 
-router.post('/login', login);
-router.get('/me', protect, getMe);
+const router = Router();
 
-module.exports = router;
+router.post(
+  '/login',
+  [
+    body('username').trim().notEmpty().withMessage('Username is required'),
+    body('password').notEmpty().withMessage('Password is required'),
+  ],
+  handleValidationErrors,
+  authController.login
+);
+
+router.post('/initialize', authController.initializeAdmin);
+
+export default router;

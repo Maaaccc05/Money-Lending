@@ -1,45 +1,67 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const connectDB = require('./config/db');
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import dotenv from 'dotenv';
+import connectDB from './config/db.js';
+import authRoutes from './routes/authRoutes.js';
+import borrowerRoutes from './routes/borrowerRoutes.js';
+import lenderRoutes from './routes/lenderRoutes.js';
+import loanRoutes from './routes/loanRoutes.js';
+import interestRoutes from './routes/interestRoutes.js';
+import reportRoutes from './routes/reportRoutes.js';
+
+// Load environment variables
+dotenv.config();
+
+// Initialize Express app
+const app = express();
 
 // Connect to MongoDB
 connectDB();
 
-const app = express();
+// Security middleware
+app.use(helmet());
 
-// Middleware
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:3000'], credentials: true }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// CORS configuration
+app.use(
+  cors({
+    origin: process.env.NODE_ENV === 'production' ? 'http://localhost:5173' : true,
+    credentials: true,
+  })
+);
+
+// Body parser middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ message: 'Server is running' });
+});
 
 // Routes
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/borrowers', require('./routes/borrowerRoutes'));
-app.use('/api/lenders', require('./routes/lenderRoutes'));
-app.use('/api/loans', require('./routes/loanRoutes'));
-app.use('/api/interest', require('./routes/interestRoutes'));
-app.use('/api/reports', require('./routes/reportRoutes'));
-
-// Health check
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+app.use('/api/auth', authRoutes);
+app.use('/api/borrowers', borrowerRoutes);
+app.use('/api/lenders', lenderRoutes);
+app.use('/api/loans', loanRoutes);
+app.use('/api/interest', interestRoutes);
+app.use('/api/reports', reportRoutes);
 
 // 404 handler
 app.use((req, res) => {
-    res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
+  res.status(404).json({ message: 'Route not found' });
 });
 
-// Error handler
+// Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+  console.error('Error:', err);
+  res.status(err.status || 500).json({
+    message: process.env.NODE_ENV === 'production' ? 'Server error' : err.message,
+  });
 });
 
+// Start server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🔐 Admin username: ${process.env.ADMIN_USERNAME || 'control'}`);
+  console.log(`Server running on port ${PORT}`);
 });

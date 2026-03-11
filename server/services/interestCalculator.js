@@ -1,79 +1,59 @@
-const dayjs = require('dayjs');
+import dayjs from 'dayjs';
 
-/**
- * Calculate interest using daily rate formula:
- * dailyRate = annualRate / 365
- * interest = principal × dailyRate × numberOfDays
- */
-const calculateInterest = (principal, annualRate, startDate, endDate) => {
-    const start = dayjs(startDate);
-    const end = dayjs(endDate);
-    const daysCount = end.diff(start, 'day');
-    const dailyRate = annualRate / 100 / 365;
-    const interestAmount = principal * dailyRate * daysCount;
-    return {
-        daysCount,
-        interestAmount: Math.round(interestAmount * 100) / 100,
-        dailyRate,
-    };
+// Calculate daily interest rate
+const calculateDailyRate = (annualRate) => {
+  return annualRate / 365;
 };
 
-/**
- * Generate interest period end date based on start date and period in months
- */
-const getInterestPeriodEndDate = (startDate, periodMonths) => {
-    return dayjs(startDate).add(periodMonths, 'month').toDate();
+// Calculate interest for a period
+export const calculateInterest = (principal, annualRate, startDate, endDate) => {
+  const dailyRate = calculateDailyRate(annualRate / 100); // Convert percentage to decimal
+
+  const start = dayjs(startDate);
+  const end = dayjs(endDate);
+  const daysCount = end.diff(start, 'day') + 1; // Include both start and end date
+
+  const interest = principal * dailyRate * daysCount;
+
+  return {
+    interest: Math.round(interest * 100) / 100, // Round to 2 decimal places
+    daysCount,
+  };
 };
 
-/**
- * Generate all interest records for a loan's lenders from a start date
- * for one interest period cycle
- */
-const generateInterestRecordsForLoan = (loan, startDate) => {
-    const records = [];
-    const periodMonths = loan.interestPeriodMonths;
-    const endDate = getInterestPeriodEndDate(startDate, periodMonths);
+// Generate interest records for a loan period
+export const generateInterestRecords = (loan, startDate) => {
+  const records = [];
+  const interestPeriodMonths = loan.interestPeriodMonths;
 
-    const start = dayjs(startDate);
-    const end = dayjs(endDate);
-    const periodLabel = `${start.format('MMM YYYY')} - ${end.format('MMM YYYY')}`;
+  for (const lender of loan.lenders) {
+    const endDate = dayjs(startDate).add(interestPeriodMonths, 'month');
 
-    for (const lenderEntry of loan.lenders) {
-        const { daysCount, interestAmount } = calculateInterest(
-            lenderEntry.amountContributed,
-            lenderEntry.lenderInterestRate,
-            startDate,
-            endDate
-        );
+    const { interest, daysCount } = calculateInterest(
+      lender.amountContributed,
+      lender.lenderInterestRate,
+      startDate,
+      endDate
+    );
 
-        records.push({
-            loanId: loan._id,
-            lenderId: lenderEntry.lenderId,
-            principalAmount: lenderEntry.amountContributed,
-            interestRate: lenderEntry.lenderInterestRate,
-            startDate: start.toDate(),
-            endDate: end.toDate(),
-            daysCount,
-            interestAmount,
-            periodLabel,
-            status: 'pending',
-        });
-    }
+    records.push({
+      loanId: loan._id,
+      lenderId: lender.lenderId,
+      principalAmount: lender.amountContributed,
+      interestRate: lender.lenderInterestRate,
+      startDate,
+      endDate: endDate.toDate(),
+      daysCount,
+      interestAmount: interest,
+      status: 'pending',
+    });
+  }
 
-    return { records, endDate };
+  return records;
 };
 
-/**
- * Calculate daily interest for display purposes
- */
-const getDailyInterest = (principal, annualRate) => {
-    const dailyRate = annualRate / 100 / 365;
-    return Math.round(principal * dailyRate * 100) / 100;
-};
-
-module.exports = {
-    calculateInterest,
-    getInterestPeriodEndDate,
-    generateInterestRecordsForLoan,
-    getDailyInterest,
+export default {
+  calculateInterest,
+  generateInterestRecords,
+  calculateDailyRate,
 };

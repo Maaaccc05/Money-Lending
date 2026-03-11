@@ -1,175 +1,138 @@
-import { useState, useEffect } from 'react';
-import { getLenders, createLender, updateLender } from '../services/api';
-import PersonForm from '../components/PersonForm';
-import dayjs from 'dayjs';
+import React, { useState, useEffect } from 'react';
+import { Sidebar, Navbar, LenderForm } from '../components/index';
+import { lenderAPI } from '../services/api';
+import { Plus, AlertCircle } from 'lucide-react';
 
-export default function Lenders() {
-    const [lenders, setLenders] = useState([]);
-    const [filtered, setFiltered] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [searchQ, setSearchQ] = useState('');
-    const [showModal, setShowModal] = useState(false);
-    const [editing, setEditing] = useState(null);
-    const [formLoading, setFormLoading] = useState(false);
-    const [toast, setToast] = useState(null);
+export const Lenders = () => {
+  const [lenders, setLenders] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState(null);
 
-    const showToast = (msg, type = 'success') => {
-        setToast({ msg, type });
-        setTimeout(() => setToast(null), 3000);
-    };
+  useEffect(() => {
+    fetchLenders();
+  }, [page]);
 
-    useEffect(() => { fetchLenders(); }, []);
+  const fetchLenders = async () => {
+    setIsLoading(true);
+    try {
+      const { data } = await lenderAPI.getAll(page, 10);
+      setLenders(data.lenders);
+      setPagination(data.pagination);
+    } catch (err) {
+      setError('Failed to fetch lenders');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    useEffect(() => {
-        if (!searchQ) { setFiltered(lenders); return; }
-        const q = searchQ.toLowerCase();
-        setFiltered(lenders.filter(l =>
-            `${l.name} ${l.surname}`.toLowerCase().includes(q) ||
-            (l.familyGroup || '').toLowerCase().includes(q) ||
-            (l.panNumber || '').toLowerCase().includes(q)
-        ));
-    }, [searchQ, lenders]);
+  const handleCreateLender = async (data) => {
+    setFieldErrors({});
+    try {
+      await lenderAPI.create(data);
+      setShowForm(false);
+      setPage(1);
+      fetchLenders();
+    } catch (err) {
+      const serverErrors = err.response?.data?.errors;
+      if (serverErrors && serverErrors.length > 0) {
+        const mapped = {};
+        serverErrors.forEach(({ field, message }) => {
+          mapped[field] = message;
+        });
+        setFieldErrors(mapped);
+        setError('Please fix the highlighted fields below.');
+      } else {
+        setError(err.response?.data?.message || 'Failed to create lender');
+      }
+    }
+  };
 
-    const fetchLenders = async () => {
-        try {
-            const res = await getLenders();
-            setLenders(res.data.data);
-            setFiltered(res.data.data);
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    };
+  return (
+    <div className="flex">
+      <Sidebar />
+      <div className="flex-1 ml-64">
+        <Navbar />
+        <div className="pt-20 p-6 bg-gray-50 min-h-screen">
+          <div className="flex items-center justify-between mb-8">
+            <h1 className="text-3xl font-bold text-gray-800">Lenders</h1>
+            <button
+              onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            >
+              <Plus size={20} /> Add Lender
+            </button>
+          </div>
 
-    const handleSubmit = async (data) => {
-        setFormLoading(true);
-        try {
-            if (editing) {
-                const res = await updateLender(editing._id, data);
-                setLenders(prev => prev.map(l => l._id === editing._id ? res.data.data : l));
-                showToast('Lender updated successfully!');
-            } else {
-                const res = await createLender(data);
-                setLenders(prev => [res.data.data, ...prev]);
-                showToast('Lender added successfully!');
-            }
-            setShowModal(false);
-            setEditing(null);
-        } catch (err) {
-            showToast(err.response?.data?.message || 'Error saving lender', 'error');
-        } finally {
-            setFormLoading(false);
-        }
-    };
-
-    const openEdit = (lender) => {
-        setEditing({ ...lender, dob: lender.dob ? dayjs(lender.dob).format('YYYY-MM-DD') : '' });
-        setShowModal(true);
-    };
-
-    return (
-        <div className="fade-in">
-            {toast && (
-                <div className={`alert alert-${toast.type}`} style={{ position: 'fixed', top: '1rem', right: '1rem', zIndex: 200, minWidth: '300px' }}>
-                    {toast.type === 'success' ? '✅' : '❌'} {toast.msg}
-                </div>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', gap: '1rem', flexWrap: 'wrap' }}>
-                <div>
-                    <h1 className="page-title">Lenders</h1>
-                    <p className="page-subtitle">{lenders.length} total lender{lenders.length !== 1 ? 's' : ''} registered</p>
-                </div>
-                <button className="btn-primary" onClick={() => { setEditing(null); setShowModal(true); }}>
-                    ＋ Add Lender
-                </button>
+          {error && (
+            <div className="bg-red-100 text-red-700 p-4 rounded mb-6 flex items-center gap-2">
+              <AlertCircle size={20} />
+              {error}
             </div>
+          )}
 
-            <div style={{ marginBottom: '1.5rem' }}>
-                <input
-                    className="form-input"
-                    style={{ maxWidth: '400px' }}
-                    placeholder="🔍 Search by name, family group, PAN..."
-                    value={searchQ}
-                    onChange={e => setSearchQ(e.target.value)}
-                />
+          {showForm && (
+            <div className="bg-white rounded-lg shadow p-6 mb-8">
+              <h2 className="text-xl font-bold mb-4">Add New Lender</h2>
+              <LenderForm onSubmit={handleCreateLender} isLoading={isLoading} serverErrors={fieldErrors} />
+              <button
+                onClick={() => setShowForm(false)}
+                className="mt-4 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
             </div>
+          )}
 
-            {loading ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
-                    <div className="loading-spinner" style={{ width: '3rem', height: '3rem' }} />
-                </div>
-            ) : filtered.length === 0 ? (
-                <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>💰</div>
-                    <div style={{ color: '#94a3b8' }}>
-                        {searchQ ? 'No lenders match your search.' : 'No lenders added yet. Add your first lender!'}
-                    </div>
-                </div>
-            ) : (
-                <div className="table-wrapper">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Family Group</th>
-                                <th>DOB</th>
-                                <th>PAN</th>
-                                <th>Aadhaar</th>
-                                <th>Bank</th>
-                                <th>Added</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.map(l => (
-                                <tr key={l._id}>
-                                    <td>
-                                        <div style={{ fontWeight: 700 }}>{l.name} {l.surname}</div>
-                                        {l.address && <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{l.address.substring(0, 40)}{l.address.length > 40 ? '...' : ''}</div>}
-                                    </td>
-                                    <td>{l.familyGroup || <span style={{ color: '#475569' }}>—</span>}</td>
-                                    <td>{l.dob ? dayjs(l.dob).format('DD/MM/YYYY') : '—'}</td>
-                                    <td><code style={{ fontSize: '0.8rem', color: '#a5b4fc' }}>{l.panNumber || '—'}</code></td>
-                                    <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{l.aadhaarNumber || '—'}</td>
-                                    <td>
-                                        {l.bankName ? (
-                                            <div>
-                                                <div style={{ fontWeight: 600, fontSize: '0.8rem' }}>{l.bankName}</div>
-                                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{l.ifscCode}</div>
-                                            </div>
-                                        ) : <span style={{ color: '#475569' }}>—</span>}
-                                    </td>
-                                    <td style={{ fontSize: '0.8rem', color: '#64748b' }}>{dayjs(l.createdAt).format('DD/MM/YYYY')}</td>
-                                    <td>
-                                        <button className="btn-secondary btn-sm" onClick={() => openEdit(l)}>✏️ Edit</button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+          {isLoading ? (
+            <div className="text-center py-12">Loading lenders...</div>
+          ) : lenders.length > 0 ? (
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Name</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Family Group</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">DOB</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Bank</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Branch</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Address</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {lenders.map((lender) => (
+                    <tr key={lender._id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {lender.name} {lender.surname}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{lender.familyGroup}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {new Date(lender.dob).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{lender.bankName}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{lender.branch}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{lender.address}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-            {showModal && (
-                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
-                    <div className="modal-content">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>
-                                {editing ? '✏️ Edit Lender' : '➕ Add Lender'}
-                            </h2>
-                            <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.5rem', cursor: 'pointer' }}>×</button>
-                        </div>
-                        <PersonForm
-                            title={editing ? 'Update Lender' : 'Add Lender'}
-                            defaultValues={editing || {}}
-                            onSubmit={handleSubmit}
-                            loading={formLoading}
-                        />
-                    </div>
+              {pagination && (
+                <div className="px-6 py-4 border-t text-sm text-gray-600">
+                  Page {pagination.page} of {pagination.pages} ({pagination.total} total)
                 </div>
-            )}
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-600">No lenders found</div>
+          )}
         </div>
-    );
-}
+      </div>
+    </div>
+  );
+};
+
+export default Lenders;

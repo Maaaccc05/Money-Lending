@@ -1,14 +1,22 @@
-const express = require('express');
-const router = express.Router();
-const { getCurrentLoans, getLoansByBorrower, getLoansByLender, getFamilyGroupReport, getPendingInterestReport } = require('../controllers/reportController');
-const { protect } = require('../middleware/auth');
+import { Router } from 'express';
+import reportController from '../controllers/reportController.js';
+import authMiddleware from '../middleware/authMiddleware.js';
 
-router.use(protect);
+const router = Router();
 
-router.get('/current-loans', getCurrentLoans);
-router.get('/loans-by-borrower', getLoansByBorrower);
-router.get('/loans-by-lender', getLoansByLender);
-router.get('/family-group', getFamilyGroupReport);
-router.get('/pending-interest', getPendingInterestReport);
+// Protect all routes with authentication
+router.use(authMiddleware);
 
-module.exports = router;
+router.get('/dashboard-stats', reportController.getDashboardStats);
+
+router.get('/current-loans', reportController.getCurrentLoans);
+
+router.get('/loans-by-borrower', reportController.getLoansByBorrower);
+
+router.get('/loans-by-lender', reportController.getLoansByLender);
+
+router.get('/loans-by-family-group', reportController.getLoansByFamilyGroup);
+
+router.get('/pending-interest', reportController.getPendingInterestReport);
+
+export default router;

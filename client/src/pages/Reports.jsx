@@ -1,291 +1,238 @@
-import { useState, useEffect } from 'react';
-import { reportCurrentLoans, reportByBorrower, reportByLender, reportFamilyGroup, reportPendingInterest } from '../services/api';
-import dayjs from 'dayjs';
+import React, { useState } from 'react';
+import { Sidebar, Navbar } from '../components/index';
+import { reportAPI, borrowerAPI, lenderAPI } from '../services/api';
+import { AlertCircle, Download } from 'lucide-react';
 
-const formatCurrency = (v) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(v || 0);
+export const Reports = () => {
+  const [reportType, setReportType] = useState('current-loans');
+  const [reportData, setReportData] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [borrowers, setBorrowers] = useState([]);
+  const [lenders, setLenders] = useState([]);
+  const [selectedFilter, setSelectedFilter] = useState('');
 
-const REPORTS = [
-    { key: 'current', label: 'Current Loans', icon: '📋', desc: 'All active loans with borrower and lender info' },
-    { key: 'by-borrower', label: 'By Borrower', icon: '👤', desc: 'Loans grouped by borrower' },
-    { key: 'by-lender', label: 'By Lender', icon: '💰', desc: 'Contributions grouped by lender' },
-    { key: 'borrower-family', label: 'Borrower Family Groups', icon: '👨‍👩‍👧', desc: 'Loan stats by borrower family group' },
-    { key: 'lender-family', label: 'Lender Family Groups', icon: '👨‍👩‍👦', desc: 'Contribution stats by lender family group' },
-    { key: 'pending-interest', label: 'Pending Interest', icon: '⏳', desc: 'Outstanding interest by loan and lender' },
-];
+  const fetchReportData = async (type) => {
+    setIsLoading(true);
+    setError('');
+    try {
+      let data;
+      switch (type) {
+        case 'current-loans':
+          ({ data } = await reportAPI.getCurrentLoans());
+          setReportData(data);
+          break;
+        case 'loans-by-borrower':
+          ({ data } = await reportAPI.getLoansByBorrower());
+          setReportData(data);
+          // Fetch borrowers for filter
+          ({ data: { borrowers: borrowerList } } = await borrowerAPI.getAll(1, 100));
+          setBorrowers(borrowerList);
+          break;
+        case 'loans-by-lender':
+          ({ data } = await reportAPI.getLoansByLender());
+          setReportData(data);
+          // Fetch lenders for filter
+          ({ data: { lenders: lenderList } } = await lenderAPI.getAll(1, 100));
+          setLenders(lenderList);
+          break;
+        case 'pending-interest':
+          ({ data } = await reportAPI.getPendingInterest());
+          setReportData(data);
+          break;
+        default:
+          break;
+      }
+    } catch (err) {
+      setError('Failed to fetch report data');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-export default function Reports() {
-    const [activeReport, setActiveReport] = useState(null);
-    const [data, setData] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
+  const handleReportTypeChange = (type) => {
+    setReportType(type);
+    fetchReportData(type);
+  };
 
-    const loadReport = async (key) => {
-        setActiveReport(key);
-        setLoading(true);
-        setError('');
-        setData(null);
-        try {
-            let res;
-            switch (key) {
-                case 'current': res = await reportCurrentLoans(); break;
-                case 'by-borrower': res = await reportByBorrower(); break;
-                case 'by-lender': res = await reportByLender(); break;
-                case 'borrower-family': res = await reportFamilyGroup('borrower'); break;
-                case 'lender-family': res = await reportFamilyGroup('lender'); break;
-                case 'pending-interest': res = await reportPendingInterest(); break;
-            }
-            setData(res.data);
-        } catch (err) {
-            setError('Failed to load report.');
-        } finally {
-            setLoading(false);
-        }
-    };
+  const downloadReport = () => {
+    const csv = generateCSV();
+    const element = document.createElement('a');
+    element.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv));
+    element.setAttribute('download', `report-${reportType}-${Date.now()}.csv`);
+    element.style.display = 'none';
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
 
-    const renderReport = () => {
-        if (loading) return (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
-                <div className="loading-spinner" style={{ width: '3rem', height: '3rem' }} />
-            </div>
-        );
+  const generateCSV = () => {
+    let headers = [];
+    let rows = [];
 
-        if (error) return <div className="alert alert-error">{error}</div>;
-        if (!data) return null;
+    switch (reportType) {
+      case 'current-loans':
+        headers = ['Loan ID', 'Borrower', 'Amount', 'Interest Rate', 'Status', 'Lenders Count', 'Pending Interest'];
+        rows = reportData.map((loan) => [
+          loan.loanId,
+          `${loan.borrowerId?.name} ${loan.borrowerId?.surname}`,
+          loan.totalLoanAmount,
+          loan.interestRateAnnual,
+          loan.status,
+          loan.lenders?.length || 0,
+          loan.totalPendingInterest || 0,
+        ]);
+        break;
 
-        switch (activeReport) {
-            case 'current':
-                return (
-                    <div>
-                        <div style={{ marginBottom: '1rem', fontSize: '0.875rem', color: '#94a3b8' }}>
-                            {data.count} active loan{data.count !== 1 ? 's' : ''} • Total: {formatCurrency(data.data.reduce((s, l) => s + l.totalLoanAmount, 0))}
-                        </div>
-                        <div className="table-wrapper">
-                            <table>
-                                <thead><tr>
-                                    <th>Loan ID</th><th>Borrower</th><th>Family</th><th>Amount</th>
-                                    <th>Rate</th><th>Period</th><th>Disbursed</th><th>Lenders</th>
-                                </tr></thead>
-                                <tbody>
-                                    {data.data.map(l => (
-                                        <tr key={l._id}>
-                                            <td style={{ fontFamily: 'monospace', fontWeight: 700, color: '#a5b4fc' }}>{l.loanId}</td>
-                                            <td style={{ fontWeight: 600 }}>{l.borrowerId?.name} {l.borrowerId?.surname}</td>
-                                            <td style={{ color: '#94a3b8' }}>{l.borrowerId?.familyGroup || '—'}</td>
-                                            <td style={{ fontWeight: 700, color: '#10b981' }}>{formatCurrency(l.totalLoanAmount)}</td>
-                                            <td>{l.interestRateAnnual}%</td>
-                                            <td>{l.interestPeriodMonths}M</td>
-                                            <td>{dayjs(l.disbursementDate).format('DD/MM/YYYY')}</td>
-                                            <td>{l.lenders?.length}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                );
+      case 'pending-interest':
+        headers = ['Lender', 'Total Pending', 'Count'];
+        rows = reportData.map((item) => [
+          item.lenderDetails?.[0]?.name || 'Unknown',
+          item.totalPending || 0,
+          item.count || 0,
+        ]);
+        break;
 
-            case 'by-borrower':
-                return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {data.data.map((group, idx) => (
-                            <div key={idx} className="card">
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                                    <div>
-                                        <div style={{ fontWeight: 800, fontSize: '1.1rem' }}>{group.borrower.name} {group.borrower.surname}</div>
-                                        {group.borrower.familyGroup && <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{group.borrower.familyGroup}</div>}
-                                    </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontWeight: 800, fontSize: '1.25rem', color: '#10b981' }}>{formatCurrency(group.totalAmount)}</div>
-                                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{group.loans.length} loan{group.loans.length !== 1 ? 's' : ''} • {group.activeLoans} active</div>
-                                    </div>
-                                </div>
-                                <div className="table-wrapper">
-                                    <table>
-                                        <thead><tr><th>Loan ID</th><th>Amount</th><th>Rate</th><th>Disbursed</th><th>Status</th></tr></thead>
-                                        <tbody>
-                                            {group.loans.map(l => (
-                                                <tr key={l._id}>
-                                                    <td style={{ fontFamily: 'monospace', fontWeight: 700, color: '#a5b4fc' }}>{l.loanId}</td>
-                                                    <td style={{ fontWeight: 600 }}>{formatCurrency(l.totalLoanAmount)}</td>
-                                                    <td>{l.interestRateAnnual}%</td>
-                                                    <td>{dayjs(l.disbursementDate).format('DD/MM/YYYY')}</td>
-                                                    <td><span className={`badge badge-${l.status}`}>{l.status}</span></td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                );
+      default:
+        return 'No data available';
+    }
 
-            case 'by-lender':
-                return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {data.data.map((group, idx) => (
-                            <div key={idx} className="card">
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                                    <div>
-                                        <div style={{ fontWeight: 800, fontSize: '1.1rem' }}>{group.lender.name} {group.lender.surname}</div>
-                                        {group.lender.familyGroup && <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{group.lender.familyGroup}</div>}
-                                    </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontWeight: 800, fontSize: '1.25rem', color: '#10b981' }}>{formatCurrency(group.totalContributed)}</div>
-                                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Total contributed</div>
-                                    </div>
-                                </div>
-                                <div className="table-wrapper">
-                                    <table>
-                                        <thead><tr><th>Loan ID</th><th>Borrower</th><th>Contributed</th><th>Rate</th><th>Disbursed</th><th>Status</th></tr></thead>
-                                        <tbody>
-                                            {group.contributions.map((c, i) => (
-                                                <tr key={i}>
-                                                    <td style={{ fontFamily: 'monospace', fontWeight: 700, color: '#a5b4fc' }}>{c.loanId}</td>
-                                                    <td style={{ fontWeight: 600 }}>{c.borrower?.name} {c.borrower?.surname}</td>
-                                                    <td style={{ fontWeight: 600, color: '#10b981' }}>{formatCurrency(c.amountContributed)}</td>
-                                                    <td>{c.lenderInterestRate}%</td>
-                                                    <td>{dayjs(c.disbursementDate).format('DD/MM/YYYY')}</td>
-                                                    <td><span className={`badge badge-${c.status}`}>{c.status}</span></td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                );
+    const headerRow = headers.join(',');
+    const dataRows = rows.map((row) => row.join(',')).join('\n');
+    return `${headerRow}\n${dataRows}`;
+  };
 
-            case 'borrower-family':
-            case 'lender-family':
-                return (
-                    <div className="table-wrapper">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Family Group</th>
-                                    <th>{activeReport === 'lender-family' ? 'Lenders' : 'Total Amount'}</th>
-                                    <th>{activeReport === 'lender-family' ? 'Total Contributed' : 'Loan Count'}</th>
-                                    <th>{activeReport === 'lender-family' ? '' : 'Active Loans'}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {data.data.map((row, idx) => (
-                                    <tr key={idx}>
-                                        <td style={{ fontWeight: 700 }}>{row.familyGroup || 'Ungrouped'}</td>
-                                        {activeReport === 'lender-family' ? (
-                                            <>
-                                                <td>{row.lenderCount}</td>
-                                                <td style={{ fontWeight: 700, color: '#10b981' }}>{formatCurrency(row.totalContributed)}</td>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <td style={{ fontWeight: 700, color: '#10b981' }}>{formatCurrency(row.totalAmount)}</td>
-                                                <td>{row.loanCount}</td>
-                                                <td><span className="badge badge-active">{row.activeLoans}</span></td>
-                                            </>
-                                        )}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                );
-
-            case 'pending-interest':
-                return (
-                    <div>
-                        <div style={{ marginBottom: '1rem' }}>
-                            <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
-                                <div><span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Total Pending: </span><strong style={{ color: '#f59e0b', fontSize: '1.1rem' }}>{formatCurrency(data.totalPending)}</strong></div>
-                                <div><span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Records: </span><strong>{data.count}</strong></div>
-                            </div>
-                        </div>
-                        <div className="table-wrapper">
-                            <table>
-                                <thead><tr>
-                                    <th>Loan ID</th><th>Borrower</th><th>Lender</th>
-                                    <th>Period</th><th>Days</th><th>Rate</th><th>Interest</th>
-                                </tr></thead>
-                                <tbody>
-                                    {data.data.map(r => (
-                                        <tr key={r._id}>
-                                            <td style={{ fontFamily: 'monospace', fontWeight: 700, color: '#a5b4fc' }}>{r.loanId?.loanId}</td>
-                                            <td style={{ fontWeight: 600 }}>{r.loanId?.borrowerId?.name} {r.loanId?.borrowerId?.surname}</td>
-                                            <td style={{ fontWeight: 600 }}>{r.lenderId?.name} {r.lenderId?.surname}</td>
-                                            <td style={{ fontSize: '0.8rem' }}>{dayjs(r.startDate).format('DD/MM/YY')} – {dayjs(r.endDate).format('DD/MM/YY')}</td>
-                                            <td>{r.daysCount}</td>
-                                            <td>{r.interestRate}%</td>
-                                            <td style={{ fontWeight: 800, color: '#f59e0b' }}>{formatCurrency(r.interestAmount)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                );
-
-            default: return null;
-        }
-    };
-
-    return (
-        <div className="fade-in">
-            <div style={{ marginBottom: '2rem' }}>
-                <h1 className="page-title">Reports</h1>
-                <p className="page-subtitle">Generate and view detailed lending reports</p>
-            </div>
-
-            {/* Report Selector */}
-            <div className="grid-3" style={{ marginBottom: '2rem' }}>
-                {REPORTS.map(r => (
-                    <button
-                        key={r.key}
-                        onClick={() => loadReport(r.key)}
-                        style={{
-                            background: activeReport === r.key ? 'rgba(99,102,241,0.15)' : 'rgba(30,41,59,0.8)',
-                            border: `1px solid ${activeReport === r.key ? '#6366f1' : '#334155'}`,
-                            borderRadius: '0.75rem',
-                            padding: '1.25rem',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            transition: 'all 0.2s',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.5rem',
-                            width: '100%',
-                        }}
-                        onMouseOver={e => { if (activeReport !== r.key) e.currentTarget.style.borderColor = '#6366f1'; }}
-                        onMouseOut={e => { if (activeReport !== r.key) e.currentTarget.style.borderColor = '#334155'; }}
-                    >
-                        <div style={{ fontSize: '1.5rem' }}>{r.icon}</div>
-                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: activeReport === r.key ? '#a5b4fc' : '#f1f5f9' }}>{r.label}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{r.desc}</div>
-                    </button>
-                ))}
-            </div>
-
-            {/* Report Output */}
-            {activeReport && (
-                <div className="card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', alignItems: 'center' }}>
-                        <h2 style={{ fontSize: '1.1rem', fontWeight: 800 }}>
-                            {REPORTS.find(r => r.key === activeReport)?.icon} {REPORTS.find(r => r.key === activeReport)?.label}
-                        </h2>
-                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Generated at {dayjs().format('DD/MM/YYYY HH:mm')}</span>
-                    </div>
-                    {renderReport()}
-                </div>
+  return (
+    <div className="flex">
+      <Sidebar />
+      <div className="flex-1 ml-64">
+        <Navbar />
+        <div className="pt-20 p-6 bg-gray-50 min-h-screen">
+          <div className="flex items-center justify-between mb-8">
+            <h1 className="text-3xl font-bold text-gray-800">Reports</h1>
+            {reportData.length > 0 && (
+              <button
+                onClick={downloadReport}
+                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+              >
+                <Download size={20} /> Download CSV
+              </button>
             )}
+          </div>
 
-            {!activeReport && (
-                <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📈</div>
-                    <div style={{ color: '#94a3b8' }}>Select a report above to generate it</div>
-                </div>
-            )}
+          {error && (
+            <div className="bg-red-100 text-red-700 p-4 rounded mb-6 flex items-center gap-2">
+              <AlertCircle size={20} />
+              {error}
+            </div>
+          )}
+
+          {/* Report Type Selection */}
+          <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 className="text-lg font-bold mb-4">Select Report Type</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { value: 'current-loans', label: 'Current Loans' },
+                { value: 'loans-by-borrower', label: 'Loans by Borrower' },
+                { value: 'loans-by-lender', label: 'Loans by Lender' },
+                { value: 'pending-interest', label: 'Pending Interest' },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => handleReportTypeChange(option.value)}
+                  className={`px-4 py-2 rounded-lg font-medium transition ${
+                    reportType === option.value
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Report Data Display */}
+          {isLoading ? (
+            <div className="text-center py-12">Loading report...</div>
+          ) : reportData.length > 0 ? (
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      {reportType === 'current-loans' && (
+                        <>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Loan ID</th>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Borrower</th>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Amount</th>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Rate</th>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Status</th>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Pending Interest</th>
+                        </>
+                      )}
+                      {reportType === 'pending-interest' && (
+                        <>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Lender</th>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Total Pending</th>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Records Count</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {reportType === 'current-loans' &&
+                      reportData.map((loan) => (
+                        <tr key={loan._id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 text-sm">{loan.loanId}</td>
+                          <td className="px-6 py-4 text-sm">
+                            {loan.borrowerId?.name} {loan.borrowerId?.surname}
+                          </td>
+                          <td className="px-6 py-4 text-sm">₹{loan.totalLoanAmount.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm">{loan.interestRateAnnual}%</td>
+                          <td className="px-6 py-4 text-sm">
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-semibold ${
+                                loan.status === 'active'
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}
+                            >
+                              {loan.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm font-semibold">
+                            ₹{loan.totalPendingInterest?.toLocaleString() || 0}
+                          </td>
+                        </tr>
+                      ))}
+
+                    {reportType === 'pending-interest' &&
+                      reportData.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 text-sm">
+                            {item.lenderDetails?.[0]?.name || 'Unknown'}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-semibold">
+                            ₹{item.totalPending?.toLocaleString() || 0}
+                          </td>
+                          <td className="px-6 py-4 text-sm">{item.count || 0}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-600 bg-white rounded-lg">
+              No data available for this report
+            </div>
+          )}
         </div>
-    );
-}
+      </div>
+    </div>
+  );
+};
+
+export default Reports;

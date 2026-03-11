@@ -1,69 +1,88 @@
 import axios from 'axios';
 
+const API_BASE_URL = '/api';
+
 const api = axios.create({
-    baseURL: '/api',
-    headers: { 'Content-Type': 'application/json' },
+  baseURL: API_BASE_URL,
 });
 
-// Attach JWT token to every request
+// Add token to requests
 api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-    return config;
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
-// Handle 401 globally - redirect to login
+// Handle response errors
 api.interceptors.response.use(
-    (response) => response,
-    (error) => {
-        if (error.response?.status === 401) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            window.location.href = '/login';
-        }
-        return Promise.reject(error);
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && window.location.pathname !== '/login') {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
     }
+    return Promise.reject(error);
+  }
 );
 
-// ─── Auth ────────────────────────────────────────────────────────
-export const login = (data) => api.post('/auth/login', data);
-export const getMe = () => api.get('/auth/me');
+// Auth endpoints
+export const authAPI = {
+  login: (credentials) => api.post('/auth/login', credentials),
+};
 
-// ─── Borrowers ───────────────────────────────────────────────────
-export const getBorrowers = () => api.get('/borrowers');
-export const getBorrower = (id) => api.get(`/borrowers/${id}`);
-export const searchBorrowers = (q) => api.get(`/borrowers/search?q=${encodeURIComponent(q)}`);
-export const createBorrower = (data) => api.post('/borrowers', data);
-export const updateBorrower = (id, data) => api.put(`/borrowers/${id}`, data);
+// Borrower endpoints
+export const borrowerAPI = {
+  create: (data) => api.post('/borrowers', data),
+  getAll: (page = 1, limit = 10) => api.get('/borrowers', { params: { page, limit } }),
+  getById: (id) => api.get(`/borrowers/${id}`),
+  update: (id, data) => api.put(`/borrowers/${id}`, data),
+  search: (query) => api.get('/borrowers/search', { params: { query } }),
+};
 
-// ─── Lenders ─────────────────────────────────────────────────────
-export const getLenders = () => api.get('/lenders');
-export const getLender = (id) => api.get(`/lenders/${id}`);
-export const searchLenders = (q) => api.get(`/lenders/search?q=${encodeURIComponent(q)}`);
-export const createLender = (data) => api.post('/lenders', data);
-export const updateLender = (id, data) => api.put(`/lenders/${id}`, data);
+// Lender endpoints
+export const lenderAPI = {
+  create: (data) => api.post('/lenders', data),
+  getAll: (page = 1, limit = 10) => api.get('/lenders', { params: { page, limit } }),
+  getById: (id) => api.get(`/lenders/${id}`),
+  update: (id, data) => api.put(`/lenders/${id}`, data),
+  search: (query) => api.get('/lenders/search', { params: { query } }),
+  getByFamilyGroup: (familyGroup) => api.get('/lenders/family-group', { params: { familyGroup } }),
+};
 
-// ─── Loans ───────────────────────────────────────────────────────
-export const getLoans = (status) => api.get(`/loans${status ? `?status=${status}` : ''}`);
-export const getLoan = (id) => api.get(`/loans/${id}`);
-export const getLoansByBorrower = (borrowerId) => api.get(`/loans/borrower/${borrowerId}`);
-export const getLoansByLender = (lenderId) => api.get(`/loans/lender/${lenderId}`);
-export const createLoan = (data) => api.post('/loans', data);
-export const updateLoan = (id, data) => api.put(`/loans/${id}`, data);
-export const addLenderToLoan = (id, data) => api.post(`/loans/${id}/add-lender`, data);
+// Loan endpoints
+export const loanAPI = {
+  create: (data) => api.post('/loans', data),
+  getAll: (page = 1, limit = 10, status = null) =>
+    api.get('/loans', { params: { page, limit, status } }),
+  getById: (id) => api.get(`/loans/${id}`),
+  getByBorrower: (borrowerId) => api.get(`/loans/borrower/${borrowerId}`),
+  getByLender: (lenderId) => api.get(`/loans/lender/${lenderId}`),
+  addLender: (loanId, data) => api.post(`/loans/${loanId}/add-lender`, data),
+  updateStatus: (id, status) => api.put(`/loans/${id}/status`, { status }),
+};
 
-// ─── Interest ────────────────────────────────────────────────────
-export const generateInterest = (loanId, data) => api.post(`/interest/generate/${loanId}`, data);
-export const getPendingInterest = () => api.get('/interest/pending');
-export const receiveInterestPayment = (data) => api.post('/interest/receive', data);
-export const getInterestByLoan = (loanId) => api.get(`/interest/loan/${loanId}`);
-export const getPaymentsByLoan = (loanId) => api.get(`/interest/payments/${loanId}`);
+// Interest endpoints
+export const interestAPI = {
+  generate: (loanId, startDate) => api.post(`/interest/generate/${loanId}`, { startDate }),
+  getPending: (page = 1, limit = 10) => api.get('/interest/pending', { params: { page, limit } }),
+  recordPayment: (data) => api.post('/interest/record-payment', data),
+  getPayments: (page = 1, limit = 10) => api.get('/interest/payments', { params: { page, limit } }),
+  getByLoan: (loanId) => api.get(`/interest/${loanId}`),
+};
 
-// ─── Reports ─────────────────────────────────────────────────────
-export const reportCurrentLoans = () => api.get('/reports/current-loans');
-export const reportByBorrower = () => api.get('/reports/loans-by-borrower');
-export const reportByLender = () => api.get('/reports/loans-by-lender');
-export const reportFamilyGroup = (type) => api.get(`/reports/family-group?type=${type || 'borrower'}`);
-export const reportPendingInterest = () => api.get('/reports/pending-interest');
+// Report endpoints
+export const reportAPI = {
+  getDashboardStats: () => api.get('/reports/dashboard-stats'),
+  getCurrentLoans: () => api.get('/reports/current-loans'),
+  getLoansByBorrower: (borrowerId = null) =>
+    api.get('/reports/loans-by-borrower', { params: { borrowerId } }),
+  getLoansByLender: (lenderId = null) =>
+    api.get('/reports/loans-by-lender', { params: { lenderId } }),
+  getLoansByFamilyGroup: (familyGroup) =>
+    api.get('/reports/loans-by-family-group', { params: { familyGroup } }),
+  getPendingInterest: () => api.get('/reports/pending-interest'),
+};
 
 export default api;

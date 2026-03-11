@@ -1,110 +1,214 @@
-const Loan = require('../models/Loan');
+import Loan from '../models/Loan.js';
+import Borrower from '../models/Borrower.js';
+import Lender from '../models/Lender.js';
 
-// @desc    Create loan
-// @route   POST /api/loans
-exports.createLoan = async (req, res) => {
-    try {
-        const loan = await Loan.create(req.body);
-        await loan.populate('borrowerId lenders.lenderId');
-        res.status(201).json({ success: true, data: loan });
-    } catch (error) {
-        if (error.name === 'ValidationError') {
-            const messages = Object.values(error.errors).map(e => e.message);
-            return res.status(400).json({ success: false, message: messages.join(', ') });
-        }
-        res.status(500).json({ success: false, message: error.message });
+export const createLoan = async (req, res) => {
+  try {
+    const { borrowerId, totalLoanAmount, disbursementDate, interestRateAnnual, interestPeriodMonths, lenders } = req.body;
+
+    // Validate borrower exists
+    const borrower = await Borrower.findById(borrowerId);
+    if (!borrower) {
+      return res.status(404).json({ message: 'Borrower not found' });
     }
+
+    // Validate lenders exist and calculate total
+    let totalContributed = 0;
+    const validatedLenders = [];
+
+    for (const lenderData of lenders) {
+      const lender = await Lender.findById(lenderData.lenderId);
+      if (!lender) {
+        return res.status(404).json({ message: `Lender with ID ${lenderData.lenderId} not found` });
+      }
+
+      totalContributed += lenderData.amountContributed;
+      validatedLenders.push({
+        lenderId: lenderData.lenderId,
+        amountContributed: lenderData.amountContributed,
+        lenderInterestRate: lenderData.lenderInterestRate,
+        moneyReceivedDate: lenderData.moneyReceivedDate,
+      });
+    }
+
+    // Verify total contributed matches loan amount
+    if (totalContributed !== totalLoanAmount) {
+      return res.status(400).json({
+        message: `Total contributed amount (₹${totalContributed}) does not match loan amount (₹${totalLoanAmount})`,
+      });
+    }
+
+    const loan = new Loan({
+      borrowerId,
+      totalLoanAmount,
+      disbursementDate,
+      interestRateAnnual,
+      interestPeriodMonths,
+      lenders: validatedLenders,
+    });
+
+    await loan.save();
+
+    res.status(201).json({
+      message: 'Loan created successfully',
+      loan: await loan.populate('borrowerId lenders.lenderId'),
+    });
+  } catch (error) {
+    console.error('Create loan error:', error);
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// @desc    Add lender to existing loan
-// @route   POST /api/loans/:id/add-lender
-exports.addLenderToLoan = async (req, res) => {
-    try {
-        const loan = await Loan.findById(req.params.id);
-        if (!loan) return res.status(404).json({ success: false, message: 'Loan not found' });
-        if (loan.status !== 'active') {
-            return res.status(400).json({ success: false, message: 'Cannot add lender to non-active loan' });
-        }
+export const addLenderToLoan = async (req, res) => {
+  try {
+    const { loanId } = req.params;
+    const { lenderId, amountContributed, lenderInterestRate, moneyReceivedDate } = req.body;
 
-        loan.lenders.push(req.body);
-        loan.totalLoanAmount = loan.lenders.reduce((sum, l) => sum + l.amountContributed, 0);
-        await loan.save();
-        await loan.populate('borrowerId lenders.lenderId');
-
-        res.json({ success: true, data: loan });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+    const loan = await Loan.findById(loanId);
+    if (!loan) {
+      return res.status(404).json({ message: 'Loan not found' });
     }
+
+    const lender = await Lender.findById(lenderId);
+    if (!lender) {
+      return res.status(404).json({ message: 'Lender not found' });
+    }
+
+    // Check if lender already exists in loan
+    if (loan.lenders.some((l) => l.lenderId.toString() === lenderId)) {
+      return res.status(400).json({ message: 'Lender already added to this loan' });
+    }
+
+    loan.lenders.push({
+      lenderId,
+      amountContributed,
+      lenderInterestRate,
+      moneyReceivedDate,
+    });
+
+    await loan.save();
+
+    res.status(200).json({
+      message: 'Lender added to loan successfully',
+      loan: await loan.populate('borrowerId lenders.lenderId'),
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// @desc    Get all loans
-// @route   GET /api/loans
-exports.getLoans = async (req, res) => {
-    try {
-        const { status } = req.query;
-        const filter = status ? { status } : {};
-        const loans = await Loan.find(filter)
-            .populate('borrowerId', 'name surname familyGroup')
-            .populate('lenders.lenderId', 'name surname familyGroup')
-            .sort({ createdAt: -1 });
-        res.json({ success: true, count: loans.length, data: loans });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+export const getLoans = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    const status = req.query.status || null;
+
+    let query = {};
+    if (status) {
+      query.status = status;
     }
+
+    const loans = await Loan.find(query)
+      .populate('borrowerId', 'name surname')
+      .populate('lenders.lenderId', 'name surname familyGroup')
+      .limit(limit)
+      .skip(skip)
+      .sort({ createdAt: -1 });
+
+    const total = await Loan.countDocuments(query);
+
+    res.status(200).json({
+      loans,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// @desc    Get single loan
-// @route   GET /api/loans/:id
-exports.getLoan = async (req, res) => {
-    try {
-        const loan = await Loan.findById(req.params.id)
-            .populate('borrowerId')
-            .populate('lenders.lenderId');
-        if (!loan) return res.status(404).json({ success: false, message: 'Loan not found' });
-        res.json({ success: true, data: loan });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+export const getLoanById = async (req, res) => {
+  try {
+    const loan = await Loan.findById(req.params.id)
+      .populate('borrowerId')
+      .populate('lenders.lenderId');
+
+    if (!loan) {
+      return res.status(404).json({ message: 'Loan not found' });
     }
+
+    res.status(200).json(loan);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// @desc    Get loans by borrower
-// @route   GET /api/loans/borrower/:borrowerId
-exports.getLoansByBorrower = async (req, res) => {
-    try {
-        const loans = await Loan.find({ borrowerId: req.params.borrowerId })
-            .populate('borrowerId', 'name surname')
-            .populate('lenders.lenderId', 'name surname')
-            .sort({ createdAt: -1 });
-        res.json({ success: true, count: loans.length, data: loans });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
+export const getLoansByBorrower = async (req, res) => {
+  try {
+    const { borrowerId } = req.params;
+
+    const loans = await Loan.find({ borrowerId })
+      .populate('borrowerId', 'name surname')
+      .populate('lenders.lenderId', 'name surname familyGroup')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(loans);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// @desc    Get loans by lender
-// @route   GET /api/loans/lender/:lenderId
-exports.getLoansByLender = async (req, res) => {
-    try {
-        const loans = await Loan.find({ 'lenders.lenderId': req.params.lenderId })
-            .populate('borrowerId', 'name surname')
-            .populate('lenders.lenderId', 'name surname')
-            .sort({ createdAt: -1 });
-        res.json({ success: true, count: loans.length, data: loans });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
+export const getLoansByLender = async (req, res) => {
+  try {
+    const { lenderId } = req.params;
+
+    const loans = await Loan.find({ 'lenders.lenderId': lenderId })
+      .populate('borrowerId', 'name surname')
+      .populate('lenders.lenderId', 'name surname familyGroup')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(loans);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// @desc    Update loan status
-// @route   PUT /api/loans/:id
-exports.updateLoan = async (req, res) => {
-    try {
-        const loan = await Loan.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })
-            .populate('borrowerId')
-            .populate('lenders.lenderId');
-        if (!loan) return res.status(404).json({ success: false, message: 'Loan not found' });
-        res.json({ success: true, data: loan });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+export const updateLoanStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['active', 'closed'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
     }
+
+    const loan = await Loan.findByIdAndUpdate(id, { status }, { new: true })
+      .populate('borrowerId')
+      .populate('lenders.lenderId');
+
+    if (!loan) {
+      return res.status(404).json({ message: 'Loan not found' });
+    }
+
+    res.status(200).json({
+      message: 'Loan status updated successfully',
+      loan,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export default {
+  createLoan,
+  addLenderToLoan,
+  getLoans,
+  getLoanById,
+  getLoansByBorrower,
+  getLoansByLender,
+  updateLoanStatus,
 };

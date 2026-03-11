@@ -1,19 +1,62 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
-const BorrowerSchema = new mongoose.Schema({
-    name: { type: String, required: [true, 'First name is required'], trim: true },
-    surname: { type: String, required: [true, 'Surname is required'], trim: true },
-    familyGroup: { type: String, trim: true, default: '' },
-    dob: { type: Date, required: [true, 'Date of birth is required'] },
-    address: { type: String, trim: true, default: '' },
-    panNumber: { type: String, trim: true, uppercase: true, default: '' },
-    aadhaarNumber: { type: String, trim: true, default: '' },
-    bankAccountNumber: { type: String, trim: true, default: '' },
-    ifscCode: { type: String, trim: true, uppercase: true, default: '' },
-    bankName: { type: String, trim: true, default: '' },
-    branch: { type: String, trim: true, default: '' },
-}, { timestamps: true });
+const borrowerSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: [true, 'Please provide borrower name'],
+      trim: true,
+    },
+    surname: {
+      type: String,
+      required: [true, 'Please provide borrower surname'],
+      trim: true,
+    },
+    dob: {
+      type: Date,
+      required: [true, 'Please provide date of birth'],
+    },
+    address: {
+      type: String,
+      required: [true, 'Please provide address'],
+      trim: true,
+    },
+    panNumber: {
+      type: String,
+      required: [true, 'Please provide PAN number'],
+      unique: true,
+      uppercase: true,
+      match: [/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, 'Please provide a valid PAN number'],
+      select: false, // Sensitive field - not returned by default
+    },
+    aadhaarNumber: {
+      type: String,
+      required: [true, 'Please provide Aadhaar number'],
+      match: [/^[0-9]{12}$/, 'Please provide a valid 12-digit Aadhaar number'],
+      select: false, // Sensitive field - not returned by default
+    },
+    bankAccountNumber: {
+      type: String,
+      required: [true, 'Please provide bank account number'],
+      select: false, // Sensitive field - not returned by default
+    },
+    ifscCode: {
+      type: String,
+      required: [true, 'Please provide IFSC code'],
+      uppercase: true,
+    },
+    bankName: {
+      type: String,
+      required: [true, 'Please provide bank name'],
+      trim: true,
+    },
+    branch: {
+      type: String,
+      required: [true, 'Please provide branch name'],
+      trim: true,
+    },
+  },
+  { timestamps: true }
+);
 
-BorrowerSchema.index({ name: 'text', surname: 'text', familyGroup: 'text' });
-
-module.exports = mongoose.model('Borrower', BorrowerSchema);
+export default mongoose.model('Borrower', borrowerSchema);

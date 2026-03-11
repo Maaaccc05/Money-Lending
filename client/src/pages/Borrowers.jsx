@@ -1,182 +1,137 @@
-import { useState, useEffect } from 'react';
-import { getBorrowers, createBorrower, updateBorrower } from '../services/api';
-import PersonForm from '../components/PersonForm';
-import dayjs from 'dayjs';
+import React, { useState, useEffect } from 'react';
+import { Sidebar, Navbar, BorrowerForm } from '../components/index';
+import { borrowerAPI } from '../services/api';
+import { Plus, AlertCircle } from 'lucide-react';
 
-export default function Borrowers() {
-    const [borrowers, setBorrowers] = useState([]);
-    const [filtered, setFiltered] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [searchQ, setSearchQ] = useState('');
-    const [showModal, setShowModal] = useState(false);
-    const [editing, setEditing] = useState(null);
-    const [formLoading, setFormLoading] = useState(false);
-    const [toast, setToast] = useState(null);
+export const Borrowers = () => {
+  const [borrowers, setBorrowers] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState(null);
 
-    const showToast = (msg, type = 'success') => {
-        setToast({ msg, type });
-        setTimeout(() => setToast(null), 3000);
-    };
+  useEffect(() => {
+    fetchBorrowers();
+  }, [page]);
 
-    useEffect(() => {
-        fetchBorrowers();
-    }, []);
+  const fetchBorrowers = async () => {
+    setIsLoading(true);
+    try {
+      const { data } = await borrowerAPI.getAll(page, 10);
+      setBorrowers(data.borrowers);
+      setPagination(data.pagination);
+    } catch (err) {
+      setError('Failed to fetch borrowers');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    useEffect(() => {
-        if (!searchQ) { setFiltered(borrowers); return; }
-        const q = searchQ.toLowerCase();
-        setFiltered(borrowers.filter(b =>
-            `${b.name} ${b.surname}`.toLowerCase().includes(q) ||
-            (b.familyGroup || '').toLowerCase().includes(q) ||
-            (b.panNumber || '').toLowerCase().includes(q)
-        ));
-    }, [searchQ, borrowers]);
+  const handleCreateBorrower = async (data) => {
+    setFieldErrors({});
+    try {
+      await borrowerAPI.create(data);
+      setShowForm(false);
+      setPage(1);
+      fetchBorrowers();
+    } catch (err) {
+      const serverErrors = err.response?.data?.errors;
+      if (serverErrors && serverErrors.length > 0) {
+        // Map field-level errors into { fieldName: message } object
+        const mapped = {};
+        serverErrors.forEach(({ field, message }) => {
+          mapped[field] = message;
+        });
+        setFieldErrors(mapped);
+        setError('Please fix the highlighted fields below.');
+      } else {
+        setError(err.response?.data?.message || 'Failed to create borrower');
+      }
+    }
+  };
 
-    const fetchBorrowers = async () => {
-        try {
-            const res = await getBorrowers();
-            setBorrowers(res.data.data);
-            setFiltered(res.data.data);
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    };
+  return (
+    <div className="flex">
+      <Sidebar />
+      <div className="flex-1 ml-64">
+        <Navbar />
+        <div className="pt-20 p-6 bg-gray-50 min-h-screen">
+          <div className="flex items-center justify-between mb-8">
+            <h1 className="text-3xl font-bold text-gray-800">Borrowers</h1>
+            <button
+              onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            >
+              <Plus size={20} /> Add Borrower
+            </button>
+          </div>
 
-    const handleSubmit = async (data) => {
-        setFormLoading(true);
-        try {
-            if (editing) {
-                const res = await updateBorrower(editing._id, data);
-                setBorrowers(prev => prev.map(b => b._id === editing._id ? res.data.data : b));
-                showToast('Borrower updated successfully!');
-            } else {
-                const res = await createBorrower(data);
-                setBorrowers(prev => [res.data.data, ...prev]);
-                showToast('Borrower added successfully!');
-            }
-            setShowModal(false);
-            setEditing(null);
-        } catch (err) {
-            showToast(err.response?.data?.message || 'Error saving borrower', 'error');
-        } finally {
-            setFormLoading(false);
-        }
-    };
-
-    const openEdit = (borrower) => {
-        setEditing({ ...borrower, dob: borrower.dob ? dayjs(borrower.dob).format('YYYY-MM-DD') : '' });
-        setShowModal(true);
-    };
-
-    return (
-        <div className="fade-in">
-            {/* Toast */}
-            {toast && (
-                <div className={`alert alert-${toast.type}`} style={{ position: 'fixed', top: '1rem', right: '1rem', zIndex: 200, minWidth: '300px' }}>
-                    {toast.type === 'success' ? '✅' : '❌'} {toast.msg}
-                </div>
-            )}
-
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', gap: '1rem', flexWrap: 'wrap' }}>
-                <div>
-                    <h1 className="page-title">Borrowers</h1>
-                    <p className="page-subtitle">{borrowers.length} total borrower{borrowers.length !== 1 ? 's' : ''} registered</p>
-                </div>
-                <button className="btn-primary" onClick={() => { setEditing(null); setShowModal(true); }}>
-                    ＋ Add Borrower
-                </button>
+          {error && (
+            <div className="bg-red-100 text-red-700 p-4 rounded mb-6 flex items-center gap-2">
+              <AlertCircle size={20} />
+              {error}
             </div>
+          )}
 
-            {/* Search */}
-            <div style={{ marginBottom: '1.5rem' }}>
-                <input
-                    className="form-input"
-                    style={{ maxWidth: '400px' }}
-                    placeholder="🔍 Search by name, family group, PAN..."
-                    value={searchQ}
-                    onChange={e => setSearchQ(e.target.value)}
-                />
+          {showForm && (
+            <div className="bg-white rounded-lg shadow p-6 mb-8">
+              <h2 className="text-xl font-bold mb-4">Add New Borrower</h2>
+              <BorrowerForm onSubmit={handleCreateBorrower} isLoading={isLoading} serverErrors={fieldErrors} />
+              <button
+                onClick={() => setShowForm(false)}
+                className="mt-4 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
             </div>
+          )}
 
-            {/* Table */}
-            {loading ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
-                    <div className="loading-spinner" style={{ width: '3rem', height: '3rem' }} />
-                </div>
-            ) : filtered.length === 0 ? (
-                <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>👤</div>
-                    <div style={{ color: '#94a3b8' }}>
-                        {searchQ ? 'No borrowers match your search.' : 'No borrowers added yet. Add your first borrower!'}
-                    </div>
-                </div>
-            ) : (
-                <div className="table-wrapper">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Family Group</th>
-                                <th>DOB</th>
-                                <th>PAN</th>
-                                <th>Aadhaar</th>
-                                <th>Bank</th>
-                                <th>Added</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.map(b => (
-                                <tr key={b._id}>
-                                    <td>
-                                        <div style={{ fontWeight: 700 }}>{b.name} {b.surname}</div>
-                                        {b.address && <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{b.address.substring(0, 40)}{b.address.length > 40 ? '...' : ''}</div>}
-                                    </td>
-                                    <td>{b.familyGroup || <span style={{ color: '#475569' }}>—</span>}</td>
-                                    <td>{b.dob ? dayjs(b.dob).format('DD/MM/YYYY') : '—'}</td>
-                                    <td><code style={{ fontSize: '0.8rem', color: '#a5b4fc' }}>{b.panNumber || '—'}</code></td>
-                                    <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{b.aadhaarNumber || '—'}</td>
-                                    <td>
-                                        {b.bankName ? (
-                                            <div>
-                                                <div style={{ fontWeight: 600, fontSize: '0.8rem' }}>{b.bankName}</div>
-                                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{b.ifscCode}</div>
-                                            </div>
-                                        ) : <span style={{ color: '#475569' }}>—</span>}
-                                    </td>
-                                    <td style={{ fontSize: '0.8rem', color: '#64748b' }}>{dayjs(b.createdAt).format('DD/MM/YYYY')}</td>
-                                    <td>
-                                        <button className="btn-secondary btn-sm" onClick={() => openEdit(b)}>✏️ Edit</button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+          {isLoading ? (
+            <div className="text-center py-12">Loading borrowers...</div>
+          ) : borrowers.length > 0 ? (
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Name</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">DOB</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Bank</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Branch</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Address</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {borrowers.map((borrower) => (
+                    <tr key={borrower._id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {borrower.name} {borrower.surname}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {new Date(borrower.dob).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{borrower.bankName}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{borrower.branch}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{borrower.address}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-            {/* Modal */}
-            {showModal && (
-                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
-                    <div className="modal-content">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>
-                                {editing ? '✏️ Edit Borrower' : '➕ Add Borrower'}
-                            </h2>
-                            <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.5rem', cursor: 'pointer' }}>×</button>
-                        </div>
-                        <PersonForm
-                            title={editing ? 'Update Borrower' : 'Add Borrower'}
-                            defaultValues={editing || {}}
-                            onSubmit={handleSubmit}
-                            loading={formLoading}
-                        />
-                    </div>
+              {pagination && (
+                <div className="px-6 py-4 border-t text-sm text-gray-600">
+                  Page {pagination.page} of {pagination.pages} ({pagination.total} total)
                 </div>
-            )}
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-600">No borrowers found</div>
+          )}
         </div>
-    );
-}
+      </div>
+    </div>
+  );
+};
+
+export default Borrowers;

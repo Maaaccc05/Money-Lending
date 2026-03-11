@@ -1,76 +1,119 @@
-const Borrower = require('../models/Borrower');
+import Borrower from '../models/Borrower.js';
 
-// @desc    Create borrower
-// @route   POST /api/borrowers
-exports.createBorrower = async (req, res) => {
-    try {
-        const borrower = await Borrower.create(req.body);
-        res.status(201).json({ success: true, data: borrower });
-    } catch (error) {
-        if (error.name === 'ValidationError') {
-            const messages = Object.values(error.errors).map(e => e.message);
-            return res.status(400).json({ success: false, message: messages.join(', ') });
-        }
-        res.status(500).json({ success: false, message: error.message });
+export const createBorrower = async (req, res) => {
+  try {
+    const borrower = new Borrower(req.body);
+    await borrower.save();
+
+    res.status(201).json({
+      message: 'Borrower created successfully',
+      borrower: borrower.toObject({ hide: 'panNumber aadhaarNumber bankAccountNumber' }),
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({ message: `${field} already exists` });
     }
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// @desc    Get all borrowers
-// @route   GET /api/borrowers
-exports.getBorrowers = async (req, res) => {
-    try {
-        const borrowers = await Borrower.find().sort({ createdAt: -1 });
-        res.json({ success: true, count: borrowers.length, data: borrowers });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
+export const getBorrowers = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const borrowers = await Borrower.find()
+      .select('-panNumber -aadhaarNumber -bankAccountNumber')
+      .limit(limit)
+      .skip(skip)
+      .sort({ createdAt: -1 });
+
+    const total = await Borrower.countDocuments();
+
+    res.status(200).json({
+      borrowers,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// @desc    Search borrowers
-// @route   GET /api/borrowers/search
-exports.searchBorrowers = async (req, res) => {
-    try {
-        const { q } = req.query;
-        if (!q) return res.json({ success: true, data: [] });
+export const getBorrowerById = async (req, res) => {
+  try {
+    const borrower = await Borrower.findById(req.params.id).select(
+      '-panNumber -aadhaarNumber -bankAccountNumber'
+    );
 
-        const regex = new RegExp(q, 'i');
-        const borrowers = await Borrower.find({
-            $or: [{ name: regex }, { surname: regex }, { familyGroup: regex }, { panNumber: regex }],
-        }).limit(20);
-
-        res.json({ success: true, data: borrowers });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+    if (!borrower) {
+      return res.status(404).json({ message: 'Borrower not found' });
     }
+
+    res.status(200).json(borrower);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// @desc    Update borrower
-// @route   PUT /api/borrowers/:id
-exports.updateBorrower = async (req, res) => {
-    try {
-        const borrower = await Borrower.findByIdAndUpdate(req.params.id, req.body, {
-            new: true,
-            runValidators: true,
-        });
-        if (!borrower) return res.status(404).json({ success: false, message: 'Borrower not found' });
-        res.json({ success: true, data: borrower });
-    } catch (error) {
-        if (error.name === 'ValidationError') {
-            const messages = Object.values(error.errors).map(e => e.message);
-            return res.status(400).json({ success: false, message: messages.join(', ') });
-        }
-        res.status(500).json({ success: false, message: error.message });
+export const updateBorrower = async (req, res) => {
+  try {
+    // Prevent updating sensitive fields through API
+    delete req.body.panNumber;
+    delete req.body.aadhaarNumber;
+    delete req.body.bankAccountNumber;
+
+    const borrower = await Borrower.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true,
+    }).select('-panNumber -aadhaarNumber -bankAccountNumber');
+
+    if (!borrower) {
+      return res.status(404).json({ message: 'Borrower not found' });
     }
+
+    res.status(200).json({
+      message: 'Borrower updated successfully',
+      borrower,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// @desc    Get single borrower
-// @route   GET /api/borrowers/:id
-exports.getBorrower = async (req, res) => {
-    try {
-        const borrower = await Borrower.findById(req.params.id);
-        if (!borrower) return res.status(404).json({ success: false, message: 'Borrower not found' });
-        res.json({ success: true, data: borrower });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+export const searchBorrowers = async (req, res) => {
+  try {
+    const { query } = req.query;
+
+    if (!query || query.length < 2) {
+      return res.status(400).json({ message: 'Search query must be at least 2 characters' });
     }
+
+    const borrowers = await Borrower.find({
+      $or: [
+        { name: new RegExp(query, 'i') },
+        { surname: new RegExp(query, 'i') },
+        { bankName: new RegExp(query, 'i') },
+      ],
+    })
+      .select('-panNumber -aadhaarNumber -bankAccountNumber')
+      .limit(20);
+
+    res.status(200).json(borrowers);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export default {
+  createBorrower,
+  getBorrowers,
+  getBorrowerById,
+  updateBorrower,
+  searchBorrowers,
 };
