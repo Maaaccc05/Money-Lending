@@ -14,6 +14,7 @@ router.post(
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('surname').trim().notEmpty().withMessage('Surname is required'),
+    body('familyGroup').trim().notEmpty().withMessage('Family group is required'),
     body('dob').isISO8601().withMessage('Valid date of birth is required'),
     body('address').trim().notEmpty().withMessage('Address is required'),
     body('panNumber')
@@ -46,7 +47,28 @@ router.get(
 
 router.put(
   '/:id',
-  [param('id').isMongoId().withMessage('Invalid borrower ID')],
+  [
+    param('id').isMongoId().withMessage('Invalid borrower ID'),
+    body('name').optional().trim().notEmpty().withMessage('Name cannot be empty'),
+    body('surname').optional().trim().notEmpty().withMessage('Surname cannot be empty'),
+    body('familyGroup').optional().trim().notEmpty().withMessage('Family group cannot be empty'),
+    body('dob').optional().isISO8601().withMessage('Valid date of birth is required'),
+    body('address').optional().trim().notEmpty().withMessage('Address cannot be empty'),
+    body('panNumber')
+      .optional()
+      .trim()
+      .matches(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/)
+      .withMessage('Valid PAN number is required'),
+    body('aadhaarNumber')
+      .optional()
+      .trim()
+      .matches(/^[0-9]{12}$/)
+      .withMessage('Valid 12-digit Aadhaar number is required'),
+    body('bankAccountNumber').optional().trim().notEmpty().withMessage('Bank account number cannot be empty'),
+    body('ifscCode').optional().trim().notEmpty().withMessage('IFSC code cannot be empty'),
+    body('bankName').optional().trim().notEmpty().withMessage('Bank name cannot be empty'),
+    body('branch').optional().trim().notEmpty().withMessage('Branch cannot be empty'),
+  ],
   handleValidationErrors,
   borrowerController.updateBorrower
 );

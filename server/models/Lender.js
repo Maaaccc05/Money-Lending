@@ -16,6 +16,7 @@ const lenderSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Please provide family group'],
       trim: true,
+      index: true,
     },
     dob: {
       type: Date,

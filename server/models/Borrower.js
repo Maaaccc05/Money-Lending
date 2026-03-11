@@ -12,6 +12,12 @@ const borrowerSchema = new mongoose.Schema(
       required: [true, 'Please provide borrower surname'],
       trim: true,
     },
+    familyGroup: {
+      type: String,
+      required: [true, 'Please provide family group'],
+      trim: true,
+      index: true,
+    },
     dob: {
       type: Date,
       required: [true, 'Please provide date of birth'],

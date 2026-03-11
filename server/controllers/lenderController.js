@@ -63,11 +63,6 @@ export const getLenderById = async (req, res) => {
 
 export const updateLender = async (req, res) => {
   try {
-    // Prevent updating sensitive fields through API
-    delete req.body.panNumber;
-    delete req.body.aadhaarNumber;
-    delete req.body.bankAccountNumber;
-
     const lender = await Lender.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
@@ -82,6 +77,10 @@ export const updateLender = async (req, res) => {
       lender,
     });
   } catch (error) {
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({ message: `${field} already exists` });
+    }
     res.status(500).json({ message: error.message });
   }
 };

@@ -27,6 +27,7 @@ export const CreateLoan = () => {
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const isSubmitting = React.useRef(false);
 
   const handleBorrowerSearch = async (query) => {
     setBorrowerSearch(query);
@@ -79,7 +80,11 @@ export const CreateLoan = () => {
       return;
     }
 
-    setLoanLenders([...loanLenders, { ...currentLender, lenderName: `${selectedLender.name} ${selectedLender.surname}` }]);
+    setLoanLenders([...loanLenders, {
+      ...currentLender,
+      lenderName: `${selectedLender.name} ${selectedLender.surname}`,
+      familyGroup: selectedLender.familyGroup || 'Other',
+    }]);
     setCurrentLender({ lenderId: '', amountContributed: 0, lenderInterestRate: 0, moneyReceivedDate: '' });
     setSelectedLender(null);
     setLenderSearch('');
@@ -93,11 +98,16 @@ export const CreateLoan = () => {
 
   const handleCreateLoan = async (e) => {
     e.preventDefault();
+
+    // Synchronous guard prevents double-submission even with fast clicks
+    if (isSubmitting.current) return;
+    isSubmitting.current = true;
+
     setIsLoading(true);
     setError('');
 
     try {
-    if (!selectedBorrower) {
+      if (!selectedBorrower) {
         setError('Please select a borrower');
         return;
       }
@@ -139,6 +149,7 @@ export const CreateLoan = () => {
       setError(err.response?.data?.message || 'Failed to create loan');
     } finally {
       setIsLoading(false);
+      isSubmitting.current = false;
     }
   };
 
@@ -260,17 +271,33 @@ export const CreateLoan = () => {
                       autoComplete="off"
                     />
                     {showLenderDropdown && lenders.length > 0 && (
-                      <ul className="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-52 overflow-y-auto">
-                        {lenders.map((l) => (
-                          <li
-                            key={l._id}
-                            onMouseDown={() => selectLender(l)}
-                            className="px-4 py-2 hover:bg-blue-50 cursor-pointer flex items-center gap-2"
-                          >
-                            <span className="font-medium text-gray-800">{l.name} {l.surname}</span>
-                            <span className="text-xs text-gray-400 ml-auto">{l.familyGroup}</span>
-                          </li>
-                        ))}
+                      <ul className="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
+                        {(() => {
+                          // Group search results by familyGroup
+                          const grouped = {};
+                          lenders.forEach((l) => {
+                            const g = l.familyGroup || 'Other';
+                            if (!grouped[g]) grouped[g] = [];
+                            grouped[g].push(l);
+                          });
+                          return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([group, members]) => (
+                            <li key={group}>
+                              <div className="px-4 py-1.5 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide border-b">
+                                🏠 {group} Family
+                              </div>
+                              {members.map((l) => (
+                                <div
+                                  key={l._id}
+                                  onMouseDown={() => selectLender(l)}
+                                  className="px-5 py-2 hover:bg-blue-50 cursor-pointer flex items-center gap-2"
+                                >
+                                  <span className="font-medium text-gray-800">{l.name} {l.surname}</span>
+                                  <span className="text-xs text-gray-400 ml-auto">{l.bankName}</span>
+                                </div>
+                              ))}
+                            </li>
+                          ));
+                        })()}
                       </ul>
                     )}
                   </div>
@@ -320,37 +347,52 @@ export const CreateLoan = () => {
             {loanLenders.length > 0 && (
               <div className="bg-white rounded-lg shadow p-6">
                 <h2 className="text-xl font-bold mb-4">Added Lenders ({loanLenders.length})</h2>
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="px-4 py-2 text-left">Lender</th>
-                      <th className="px-4 py-2 text-left">Amount</th>
-                      <th className="px-4 py-2 text-left">Rate</th>
-                      <th className="px-4 py-2 text-left">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loanLenders.map((l, idx) => (
-                      <tr key={idx} className="border-b">
-                        <td className="px-4 py-2">{l.lenderName}</td>
-                        <td className="px-4 py-2">₹{l.amountContributed}</td>
-                        <td className="px-4 py-2">{l.lenderInterestRate}%</td>
-                        <td className="px-4 py-2">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveLender(idx)}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="text-sm text-gray-600 mt-4">
-                  Total: ₹
-                  {loanLenders.reduce((sum, l) => sum + parseFloat(l.amountContributed), 0).toLocaleString()}
+                {(() => {
+                  // Group added lenders by family
+                  const grouped = {};
+                  loanLenders.forEach((l, idx) => {
+                    const g = l.familyGroup || 'Other';
+                    if (!grouped[g]) grouped[g] = [];
+                    grouped[g].push({ ...l, idx });
+                  });
+                  return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([group, members]) => (
+                    <div key={group} className="mb-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm font-semibold text-gray-600 bg-blue-50 px-3 py-1 rounded-full">🏠 {group} Family</span>
+                      </div>
+                      <table className="w-full">
+                        <thead className="bg-gray-50 border-b">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Lender</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Amount</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Rate</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {members.map(({ idx, lenderName, amountContributed, lenderInterestRate }) => (
+                            <tr key={idx} className="border-b">
+                              <td className="px-4 py-2 text-sm">{lenderName}</td>
+                              <td className="px-4 py-2 text-sm">₹{parseFloat(amountContributed).toLocaleString('en-IN')}</td>
+                              <td className="px-4 py-2 text-sm">{lenderInterestRate}%</td>
+                              <td className="px-4 py-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveLender(idx)}
+                                  className="text-red-600 hover:text-red-800"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ));
+                })()}
+                <p className="text-sm font-semibold text-gray-700 mt-4 border-t pt-3">
+                  Total: ₹{loanLenders.reduce((sum, l) => sum + parseFloat(l.amountContributed), 0).toLocaleString('en-IN')}
                 </p>
               </div>
             )}
