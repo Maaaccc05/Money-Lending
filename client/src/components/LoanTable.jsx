@@ -1,0 +1,94 @@
+import React from 'react';
+import { Eye, Edit, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+
+export const LoanTable = ({ loans = [], onView, onEdit, onDelete, pagination }) => {
+  return (
+    <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b">
+            <tr>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Loan ID</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Borrower</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Amount</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Rate</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Lenders</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {loans.map((loan) => (
+              <tr key={loan._id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 text-sm text-gray-900">{loan.loanId}</td>
+                <td className="px-6 py-4 text-sm text-gray-900">
+                  {loan.borrowerId?.name} {loan.borrowerId?.surname}
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-900">₹{loan.totalLoanAmount.toLocaleString()}</td>
+                <td className="px-6 py-4 text-sm text-gray-900">{loan.interestRateAnnual}%</td>
+                <td className="px-6 py-4 text-sm text-gray-900">{loan.lenders?.length}</td>
+                <td className="px-6 py-4 text-sm">
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      loan.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
+                    {loan.status}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-sm flex gap-2">
+                  {onView && (
+                    <button
+                      onClick={() => onView(loan._id)}
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      <Eye size={18} />
+                    </button>
+                  )}
+                  {onEdit && (
+                    <button
+                      onClick={() => onEdit(loan._id)}
+                      className="text-yellow-600 hover:text-yellow-800"
+                    >
+                      <Edit size={18} />
+                    </button>
+                  )}
+                  {onDelete && (
+                    <button
+                      onClick={() => onDelete(loan._id)}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {pagination && (
+        <div className="px-6 py-4 border-t flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            Page {pagination.page} of {pagination.pages} ({pagination.total} total)
+          </p>
+          <div className="flex gap-2">
+            {pagination.page > 1 && (
+              <button className="p-2 hover:bg-gray-100 rounded">
+                <ChevronLeft size={18} />
+              </button>
+            )}
+            {pagination.page < pagination.pages && (
+              <button className="p-2 hover:bg-gray-100 rounded">
+                <ChevronRight size={18} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default LoanTable;
