@@ -1,17 +1,11 @@
 import React from 'react';
-import { Search, LogOut } from 'lucide-react';
+import { LogOut, Menu } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useSidebar } from './SidebarContext';
 
-export const Navbar = ({ onSearch }) => {
+export const Navbar = () => {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = React.useState('');
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    if (onSearch) {
-      onSearch(searchQuery);
-    }
-  };
+  const { setIsOpen } = useSidebar();
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -19,26 +13,26 @@ export const Navbar = ({ onSearch }) => {
   };
 
   return (
-    <nav className="bg-white border-b border-gray-200 fixed top-0 left-64 right-0 h-16 flex items-center justify-between px-6">
-      <form onSubmit={handleSearch} className="flex-1 max-w-md">
-        <div className="relative">
-          <Search size={18} className="absolute left-3 top-3 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-      </form>
+    <nav className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 lg:left-64 h-16 z-20 flex items-center justify-between px-4 sm:px-6">
+      {/* Hamburger (mobile/tablet only) */}
+      <button
+        onClick={() => setIsOpen(true)}
+        className="lg:hidden text-gray-600 hover:text-gray-900 mr-3 p-1 rounded transition"
+        aria-label="Open menu"
+      >
+        <Menu size={24} />
+      </button>
 
+      {/* Spacer so logout sits on the right */}
+      <div className="flex-1" />
+
+      {/* Logout */}
       <button
         onClick={handleLogout}
-        className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+        className="flex items-center gap-1.5 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition text-sm font-medium"
       >
-        <LogOut size={18} />
-        <span>Logout</span>
+        <LogOut size={17} />
+        <span className="hidden sm:inline">Logout</span>
       </button>
     </nav>
   );

@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { SidebarProvider } from './components/SidebarContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Borrowers from './pages/Borrowers';
 import Lenders from './pages/Lenders';
 import CreateLoan from './pages/CreateLoan';
 import CurrentLoans from './pages/CurrentLoans';
+import LoanDetails from './pages/LoanDetails';
 import InterestRecords from './pages/InterestRecords';
 import Reports from './pages/Reports';
+
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -27,7 +30,8 @@ const ProtectedRoute = ({ children }) => {
 
 function App() {
   return (
-    <BrowserRouter>
+    <SidebarProvider>
+      <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
 
@@ -77,6 +81,15 @@ function App() {
         />
 
         <Route
+          path="/loan/:loanId"
+          element={
+            <ProtectedRoute>
+              <LoanDetails />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/interest-records"
           element={
             <ProtectedRoute>
@@ -97,6 +110,7 @@ function App() {
         <Route path="/" element={<Navigate to="/dashboard" />} />
       </Routes>
     </BrowserRouter>
+    </SidebarProvider>
   );
 }
 

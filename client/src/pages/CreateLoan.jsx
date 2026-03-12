@@ -154,12 +154,12 @@ export const CreateLoan = () => {
   };
 
   return (
-    <div className="flex">
+    <div className="flex w-full overflow-x-hidden">
       <Sidebar />
-      <div className="flex-1 ml-64">
+      <div className="flex-1 min-w-0 lg:ml-64">
         <Navbar />
-        <div className="pt-20 p-6 bg-gray-50 min-h-screen">
-          <h1 className="text-3xl font-bold text-gray-800 mb-8">Create New Loan</h1>
+        <div className="pt-20 px-4 sm:px-6 lg:px-8 py-6 bg-gray-50 min-h-screen w-full max-w-full">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-6 sm:mb-8">Create New Loan</h1>
 
           {error && (
             <div className="bg-red-100 text-red-700 p-4 rounded mb-6 flex items-center gap-2">
@@ -207,7 +207,7 @@ export const CreateLoan = () => {
             {/* Loan Details */}
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-bold mb-4">Loan Details</h2>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">Total Loan Amount</label>
                   <input
@@ -257,7 +257,7 @@ export const CreateLoan = () => {
             {/* Add Lenders */}
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-bold mb-4">Add Lenders</h2>
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">Lender</label>
                   <div className="relative">
@@ -360,7 +360,8 @@ export const CreateLoan = () => {
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-sm font-semibold text-gray-600 bg-blue-50 px-3 py-1 rounded-full">🏠 {group} Family</span>
                       </div>
-                      <table className="w-full">
+                      <div className="overflow-x-auto">
+                      <table className="w-full min-w-[380px]">
                         <thead className="bg-gray-50 border-b">
                           <tr>
                             <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Lender</th>
@@ -388,6 +389,7 @@ export const CreateLoan = () => {
                           ))}
                         </tbody>
                       </table>
+                      </div>
                     </div>
                   ));
                 })()}

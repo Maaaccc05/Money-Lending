@@ -38,6 +38,8 @@ router.get('/', borrowerController.getBorrowers);
 
 router.get('/search', borrowerController.searchBorrowers);
 
+router.get('/grouped', borrowerController.getGroupedBorrowers);
+
 router.get(
   '/:id',
   [param('id').isMongoId().withMessage('Invalid borrower ID')],

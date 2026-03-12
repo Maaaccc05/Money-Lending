@@ -85,6 +85,38 @@ export const updateBorrower = async (req, res) => {
   }
 };
 
+export const getGroupedBorrowers = async (req, res) => {
+  try {
+    const borrowers = await Borrower.find()
+      .select('-panNumber -aadhaarNumber -bankAccountNumber')
+      .sort({ name: 1, surname: 1 });
+
+    // Group by familyGroup using reduce()
+    const grouped = borrowers.reduce((acc, borrower) => {
+      const key = (borrower.familyGroup || '').trim() || 'Other Family';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(borrower);
+      return acc;
+    }, {});
+
+    // Sort groups alphabetically, placing 'Other Family' at the end
+    const sortedGrouped = Object.keys(grouped)
+      .sort((a, b) => {
+        if (a === 'Other Family') return 1;
+        if (b === 'Other Family') return -1;
+        return a.localeCompare(b);
+      })
+      .reduce((acc, key) => {
+        acc[key] = grouped[key];
+        return acc;
+      }, {});
+
+    res.status(200).json({ grouped: sortedGrouped });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 export const searchBorrowers = async (req, res) => {
   try {
     const { query } = req.query;
@@ -112,6 +144,7 @@ export const searchBorrowers = async (req, res) => {
 export default {
   createBorrower,
   getBorrowers,
+  getGroupedBorrowers,
   getBorrowerById,
   updateBorrower,
   searchBorrowers,

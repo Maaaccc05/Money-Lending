@@ -1,6 +1,7 @@
 import Loan from '../models/Loan.js';
 import Borrower from '../models/Borrower.js';
 import Lender from '../models/Lender.js';
+import InterestRecord from '../models/InterestRecord.js';
 
 export const createLoan = async (req, res) => {
   try {
@@ -147,6 +148,35 @@ export const getLoanById = async (req, res) => {
   }
 };
 
+export const getLoanByLoanId = async (req, res) => {
+  try {
+    const { loanId } = req.params;
+
+    const loan = await Loan.findOne({ loanId })
+      .populate({
+        path: 'borrowerId',
+        select: '-aadhaarNumber', // expose everything except aadhaar
+      })
+      .populate({
+        path: 'lenders.lenderId',
+        select: 'name surname familyGroup bankName bankAccountNumber ifscCode branch address',
+      });
+
+    if (!loan) {
+      return res.status(404).json({ message: 'Loan not found' });
+    }
+
+    // Fetch associated interest records
+    const interestRecords = await InterestRecord.find({ loanId: loan._id })
+      .populate('lenderId', 'name surname familyGroup')
+      .sort({ startDate: 1 });
+
+    res.status(200).json({ loan, interestRecords });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 export const getLoansByBorrower = async (req, res) => {
   try {
     const { borrowerId } = req.params;
@@ -208,6 +238,7 @@ export default {
   addLenderToLoan,
   getLoans,
   getLoanById,
+  getLoanByLoanId,
   getLoansByBorrower,
   getLoansByLender,
   updateLoanStatus,

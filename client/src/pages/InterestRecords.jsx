@@ -45,12 +45,12 @@ export const InterestRecords = () => {
   };
 
   return (
-    <div className="flex">
+    <div className="flex w-full overflow-x-hidden">
       <Sidebar />
-      <div className="flex-1 ml-64">
+      <div className="flex-1 min-w-0 lg:ml-64">
         <Navbar />
-        <div className="pt-20 p-6 bg-gray-50 min-h-screen">
-          <h1 className="text-3xl font-bold text-gray-800 mb-8">Interest Records</h1>
+        <div className="pt-20 px-4 sm:px-6 lg:px-8 py-6 bg-gray-50 min-h-screen w-full max-w-full">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-6 sm:mb-8">Interest Records</h1>
 
           {error && (
             <div className="bg-red-100 text-red-700 p-4 rounded mb-6 flex items-center gap-2">

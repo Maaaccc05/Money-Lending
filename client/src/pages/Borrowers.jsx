@@ -110,7 +110,7 @@ const EditBorrowerModal = ({ borrower, onClose, onSave }) => {
         )}
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field('Name', 'name')}
             {field('Surname', 'surname')}
             {field('Family Group', 'familyGroup')}
@@ -166,15 +166,15 @@ const FamilyGroupSection = ({ groupName, borrowers, onEdit }) => {
       {/* Group header */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="w-full flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b hover:from-blue-100 hover:to-indigo-100 transition"
+        className="w-full flex items-center justify-between px-4 sm:px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b hover:from-blue-100 hover:to-indigo-100 transition"
       >
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
             <Users size={16} className="text-white" />
           </div>
           <div className="text-left">
             <span className="font-bold text-gray-800 text-base">{groupName} Family</span>
-            <span className="ml-3 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+            <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
               {borrowers.length} {borrowers.length === 1 ? 'borrower' : 'borrowers'}
             </span>
           </div>
@@ -183,41 +183,61 @@ const FamilyGroupSection = ({ groupName, borrowers, onEdit }) => {
       </button>
 
       {!collapsed && (
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">DOB</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Bank</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Branch</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Address</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
+        <>
+          {/* ── Mobile: card list (hidden on sm+) ── */}
+          <div className="divide-y divide-gray-100 sm:hidden">
             {borrowers.map((b) => (
-              <tr key={b._id} className="hover:bg-blue-50/30 transition-colors">
-                <td className="px-6 py-3.5 text-sm font-medium text-gray-900">
-                  {b.name} {b.surname}
-                </td>
-                <td className="px-6 py-3.5 text-sm text-gray-600">
-                  {new Date(b.dob).toLocaleDateString('en-IN')}
-                </td>
-                <td className="px-6 py-3.5 text-sm text-gray-600">{b.bankName}</td>
-                <td className="px-6 py-3.5 text-sm text-gray-600">{b.branch}</td>
-                <td className="px-6 py-3.5 text-sm text-gray-600 max-w-xs truncate">{b.address}</td>
-                <td className="px-6 py-3.5">
-                  <button
-                    onClick={() => onEdit(b)}
-                    className="flex items-center gap-1.5 text-xs bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-200 font-medium transition"
-                  >
-                    <Pencil size={13} /> Edit
-                  </button>
-                </td>
-              </tr>
+              <div key={b._id} className="px-4 py-3 flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm">{b.name} {b.surname}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{b.bankName} · {b.branch}</p>
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">{b.address}</p>
+                </div>
+                <button
+                  onClick={() => onEdit(b)}
+                  className="shrink-0 flex items-center gap-1 text-xs bg-blue-100 text-blue-700 px-2.5 py-1.5 rounded-lg hover:bg-blue-200 font-medium transition"
+                >
+                  <Pencil size={12} /> Edit
+                </button>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+
+          {/* ── Desktop: table (hidden below sm) ── */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">DOB</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Bank</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Branch</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Address</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {borrowers.map((b) => (
+                  <tr key={b._id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="px-6 py-3.5 text-sm font-medium text-gray-900">{b.name} {b.surname}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600">{new Date(b.dob).toLocaleDateString('en-IN')}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600">{b.bankName}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600">{b.branch}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600 max-w-xs truncate">{b.address}</td>
+                    <td className="px-6 py-3.5">
+                      <button
+                        onClick={() => onEdit(b)}
+                        className="flex items-center gap-1.5 text-xs bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-200 font-medium transition"
+                      >
+                        <Pencil size={13} /> Edit
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
@@ -225,7 +245,7 @@ const FamilyGroupSection = ({ groupName, borrowers, onEdit }) => {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export const Borrowers = () => {
-  const [borrowers, setBorrowers] = useState([]);
+  const [grouped, setGrouped] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -235,9 +255,10 @@ export const Borrowers = () => {
 
   const fetchBorrowers = useCallback(async () => {
     setIsLoading(true);
+    setError('');
     try {
       const { data } = await borrowerAPI.getAllGrouped();
-      setBorrowers(data.borrowers);
+      setGrouped(data.grouped || {});
     } catch {
       setError('Failed to fetch borrowers');
     } finally {
@@ -276,36 +297,39 @@ export const Borrowers = () => {
     }
   };
 
-  const handleSaveEdit = (updatedBorrower) => {
-    setBorrowers((prev) =>
-      prev.map((b) => (b._id === updatedBorrower._id ? updatedBorrower : b))
-    );
+  const handleSaveEdit = () => {
     setEditingBorrower(null);
     setSuccess('Borrower updated successfully!');
+    fetchBorrowers();
   };
 
-  // Group by familyGroup (sorted alphabetically)
-  const grouped = React.useMemo(() => {
-    const map = {};
-    borrowers.forEach((b) => {
-      const key = (b.familyGroup || 'Uncategorized').trim();
-      if (!map[key]) map[key] = [];
-      map[key].push(b);
-    });
-    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
-  }, [borrowers]);
+  // Convert grouped object → sorted array of [groupName, members[]]
+  const sortedGroups = React.useMemo(() => {
+    return Object.entries(grouped)
+      .sort(([a], [b]) => {
+        if (a === 'Other Family') return 1;
+        if (b === 'Other Family') return -1;
+        return a.localeCompare(b);
+      })
+      .map(([groupName, members]) => [
+        groupName,
+        [...members].sort((x, y) =>
+          `${x.name} ${x.surname}`.localeCompare(`${y.name} ${y.surname}`)
+        ),
+      ]);
+  }, [grouped]);
 
   return (
-    <div className="flex">
+    <div className="flex w-full overflow-x-hidden">
       <Sidebar />
-      <div className="flex-1 ml-64">
+      <div className="flex-1 min-w-0 lg:ml-64">
         <Navbar />
-        <div className="pt-20 p-6 bg-gray-50 min-h-screen">
+        <div className="pt-20 px-4 sm:px-6 lg:px-8 py-6 bg-gray-50 min-h-screen w-full max-w-full">
 
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-800">Borrowers</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Borrowers</h1>
               <p className="text-gray-500 text-sm mt-1">Grouped by family</p>
             </div>
             <button
@@ -349,7 +373,7 @@ export const Borrowers = () => {
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-3" />
               Loading borrowers...
             </div>
-          ) : grouped.length === 0 ? (
+          ) : sortedGroups.length === 0 ? (
             <div className="text-center py-16 text-gray-500 bg-white rounded-2xl shadow-sm">
               <Users size={48} className="mx-auto mb-3 text-gray-300" />
               <p className="font-medium">No borrowers found</p>
@@ -357,7 +381,7 @@ export const Borrowers = () => {
             </div>
           ) : (
             <div>
-              {grouped.map(([groupName, members]) => (
+              {sortedGroups.map(([groupName, members]) => (
                 <FamilyGroupSection
                   key={groupName}
                   groupName={groupName}

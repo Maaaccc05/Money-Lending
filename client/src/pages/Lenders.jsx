@@ -108,7 +108,7 @@ const EditLenderModal = ({ lender, onClose, onSave }) => {
         )}
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field('Name', 'name')}
             {field('Surname', 'surname')}
             {field('Family Group', 'familyGroup')}
@@ -163,15 +163,15 @@ const FamilyGroupSection = ({ groupName, lenders, onEdit }) => {
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-4">
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="w-full flex items-center justify-between px-6 py-4 bg-gradient-to-r from-purple-50 to-indigo-50 border-b hover:from-purple-100 hover:to-indigo-100 transition"
+        className="w-full flex items-center justify-between px-4 sm:px-6 py-4 bg-gradient-to-r from-purple-50 to-indigo-50 border-b hover:from-purple-100 hover:to-indigo-100 transition"
       >
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center shrink-0">
             <Users size={16} className="text-white" />
           </div>
           <div className="text-left">
             <span className="font-bold text-gray-800 text-base">{groupName} Family</span>
-            <span className="ml-3 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+            <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
               {lenders.length} {lenders.length === 1 ? 'lender' : 'lenders'}
             </span>
           </div>
@@ -180,41 +180,61 @@ const FamilyGroupSection = ({ groupName, lenders, onEdit }) => {
       </button>
 
       {!collapsed && (
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">DOB</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Bank</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Branch</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Address</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
+        <>
+          {/* ── Mobile: card list (hidden on sm+) ── */}
+          <div className="divide-y divide-gray-100 sm:hidden">
             {lenders.map((l) => (
-              <tr key={l._id} className="hover:bg-purple-50/30 transition-colors">
-                <td className="px-6 py-3.5 text-sm font-medium text-gray-900">
-                  {l.name} {l.surname}
-                </td>
-                <td className="px-6 py-3.5 text-sm text-gray-600">
-                  {new Date(l.dob).toLocaleDateString('en-IN')}
-                </td>
-                <td className="px-6 py-3.5 text-sm text-gray-600">{l.bankName}</td>
-                <td className="px-6 py-3.5 text-sm text-gray-600">{l.branch}</td>
-                <td className="px-6 py-3.5 text-sm text-gray-600 max-w-xs truncate">{l.address}</td>
-                <td className="px-6 py-3.5">
-                  <button
-                    onClick={() => onEdit(l)}
-                    className="flex items-center gap-1.5 text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg hover:bg-purple-200 font-medium transition"
-                  >
-                    <Pencil size={13} /> Edit
-                  </button>
-                </td>
-              </tr>
+              <div key={l._id} className="px-4 py-3 flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm">{l.name} {l.surname}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{l.bankName} · {l.branch}</p>
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">{l.address}</p>
+                </div>
+                <button
+                  onClick={() => onEdit(l)}
+                  className="shrink-0 flex items-center gap-1 text-xs bg-purple-100 text-purple-700 px-2.5 py-1.5 rounded-lg hover:bg-purple-200 font-medium transition"
+                >
+                  <Pencil size={12} /> Edit
+                </button>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+
+          {/* ── Desktop: table (hidden below sm) ── */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">DOB</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Bank</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Branch</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Address</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {lenders.map((l) => (
+                  <tr key={l._id} className="hover:bg-purple-50/30 transition-colors">
+                    <td className="px-6 py-3.5 text-sm font-medium text-gray-900">{l.name} {l.surname}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600">{new Date(l.dob).toLocaleDateString('en-IN')}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600">{l.bankName}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600">{l.branch}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600 max-w-xs truncate">{l.address}</td>
+                    <td className="px-6 py-3.5">
+                      <button
+                        onClick={() => onEdit(l)}
+                        className="flex items-center gap-1.5 text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg hover:bg-purple-200 font-medium transition"
+                      >
+                        <Pencil size={13} /> Edit
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
@@ -291,14 +311,14 @@ export const Lenders = () => {
   }, [lenders]);
 
   return (
-    <div className="flex">
+    <div className="flex w-full overflow-x-hidden">
       <Sidebar />
-      <div className="flex-1 ml-64">
+      <div className="flex-1 min-w-0 lg:ml-64">
         <Navbar />
-        <div className="pt-20 p-6 bg-gray-50 min-h-screen">
-          <div className="flex items-center justify-between mb-6">
+        <div className="pt-20 px-4 sm:px-6 lg:px-8 py-6 bg-gray-50 min-h-screen w-full max-w-full">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-800">Lenders</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Lenders</h1>
               <p className="text-gray-500 text-sm mt-1">Grouped by family</p>
             </div>
             <button

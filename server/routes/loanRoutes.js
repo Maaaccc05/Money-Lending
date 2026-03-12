@@ -35,6 +35,8 @@ router.post(
 
 router.get('/', loanController.getLoans);
 
+router.get('/details/:loanId', loanController.getLoanByLoanId);
+
 router.get(
   '/:id',
   [param('id').isMongoId().withMessage('Invalid loan ID')],

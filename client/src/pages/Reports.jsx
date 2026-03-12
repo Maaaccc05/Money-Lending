@@ -104,13 +104,13 @@ export const Reports = () => {
   };
 
   return (
-    <div className="flex">
+    <div className="flex w-full overflow-x-hidden">
       <Sidebar />
-      <div className="flex-1 ml-64">
+      <div className="flex-1 min-w-0 lg:ml-64">
         <Navbar />
-        <div className="pt-20 p-6 bg-gray-50 min-h-screen">
-          <div className="flex items-center justify-between mb-8">
-            <h1 className="text-3xl font-bold text-gray-800">Reports</h1>
+        <div className="pt-20 px-4 sm:px-6 lg:px-8 py-6 bg-gray-50 min-h-screen w-full max-w-full">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6 sm:mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Reports</h1>
             {reportData.length > 0 && (
               <button
                 onClick={downloadReport}
@@ -131,7 +131,7 @@ export const Reports = () => {
           {/* Report Type Selection */}
           <div className="bg-white rounded-lg shadow p-6 mb-6">
             <h2 className="text-lg font-bold mb-4">Select Report Type</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               {[
                 { value: 'current-loans', label: 'Current Loans' },
                 { value: 'loans-by-borrower', label: 'Loans by Borrower' },

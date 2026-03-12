@@ -36,7 +36,7 @@ export const authAPI = {
 export const borrowerAPI = {
   create: (data) => api.post('/borrowers', data),
   getAll: (page = 1, limit = 10) => api.get('/borrowers', { params: { page, limit } }),
-  getAllGrouped: () => api.get('/borrowers', { params: { page: 1, limit: 500 } }),
+  getAllGrouped: () => api.get('/borrowers/grouped'),
   getById: (id) => api.get(`/borrowers/${id}`),
   update: (id, data) => api.put(`/borrowers/${id}`, data),
   search: (query) => api.get('/borrowers/search', { params: { query } }),
@@ -59,6 +59,7 @@ export const loanAPI = {
   getAll: (page = 1, limit = 10, status = null) =>
     api.get('/loans', { params: { page, limit, status } }),
   getById: (id) => api.get(`/loans/${id}`),
+  getByLoanId: (loanId) => api.get(`/loans/details/${loanId}`),
   getByBorrower: (borrowerId) => api.get(`/loans/borrower/${borrowerId}`),
   getByLender: (lenderId) => api.get(`/loans/lender/${lenderId}`),
   addLender: (loanId, data) => api.post(`/loans/${loanId}/add-lender`, data),

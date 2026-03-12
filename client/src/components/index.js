@@ -4,3 +4,4 @@ export { default as BorrowerForm } from './BorrowerForm';
 export { default as LenderForm } from './LenderForm';
 export { default as LoanTable } from './LoanTable';
 export { default as InterestTable } from './InterestTable';
+export { SidebarProvider, useSidebar } from './SidebarContext';
