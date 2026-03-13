@@ -17,6 +17,15 @@ const loanSchema = new mongoose.Schema(
       required: [true, 'Please provide total loan amount'],
       min: [0, 'Loan amount must be positive'],
     },
+    fundedAmount: {
+      type: Number,
+      default: 0,
+      min: [0, 'Funded amount must be positive'],
+    },
+    remainingAmount: {
+      type: Number,
+      default: 0,
+    },
     disbursementDate: {
       type: Date,
       required: [true, 'Please provide disbursement date'],
@@ -33,8 +42,8 @@ const loanSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['active', 'closed'],
-      default: 'active',
+      enum: ['PENDING', 'PARTIALLY_FUNDED', 'FULLY_FUNDED', 'CLOSED'],
+      default: 'PENDING',
     },
     lenders: [
       {
@@ -54,6 +63,10 @@ const loanSchema = new mongoose.Schema(
           min: [0, 'Interest rate must be positive'],
         },
         moneyReceivedDate: {
+          type: Date,
+          required: true,
+        },
+        interestStartDate: {
           type: Date,
           required: true,
         },

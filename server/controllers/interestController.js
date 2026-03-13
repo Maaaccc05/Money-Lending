@@ -7,14 +7,19 @@ import dayjs from 'dayjs';
 export const generateInterest = async (req, res) => {
   try {
     const { loanId } = req.params;
-    const { startDate } = req.body;
+    // endDate = the period end date (defaults to today if not provided)
+    const endDate = req.body.endDate || req.body.startDate || new Date().toISOString();
 
     const loan = await Loan.findById(loanId).populate('lenders.lenderId');
     if (!loan) {
       return res.status(404).json({ message: 'Loan not found' });
     }
 
-    const records = generateInterestRecords(loan, startDate);
+    const records = generateInterestRecords(loan, endDate);
+
+    if (records.length === 0) {
+      return res.status(400).json({ message: 'No interest records could be generated. Check lender dates.' });
+    }
 
     // Save all interest records
     const savedRecords = await InterestRecord.insertMany(records);

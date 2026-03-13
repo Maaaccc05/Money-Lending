@@ -23,7 +23,7 @@ router.post(
       .withMessage('Valid interest rate is required')
       .toFloat(),
     body('interestPeriodMonths')
-      .isIn(['1', '3', '6'])
+      .isIn(['1', '3', '6', 1, 3, 6])
       .withMessage('Interest period must be 1, 3, or 6 months'),
     body('lenders')
       .isArray({ min: 1 })
@@ -37,6 +37,10 @@ router.get('/', loanController.getLoans);
 
 router.get('/details/:loanId', loanController.getLoanByLoanId);
 
+router.get('/borrower/:borrowerId', loanController.getLoansByBorrower);
+
+router.get('/lender/:lenderId', loanController.getLoansByLender);
+
 router.get(
   '/:id',
   [param('id').isMongoId().withMessage('Invalid loan ID')],
@@ -44,6 +48,27 @@ router.get(
   loanController.getLoanById
 );
 
+// PUT route to add a new lender contribution to an existing loan
+router.put(
+  '/:loanId/add-lender',
+  [
+    param('loanId').isMongoId().withMessage('Invalid loan ID'),
+    body('lenderId').isMongoId().withMessage('Valid lender ID is required'),
+    body('amountContributed')
+      .isNumeric()
+      .withMessage('Valid amount is required')
+      .toFloat(),
+    body('lenderInterestRate')
+      .isNumeric()
+      .withMessage('Valid interest rate is required')
+      .toFloat(),
+    body('moneyReceivedDate').isISO8601().withMessage('Valid money received date is required'),
+  ],
+  handleValidationErrors,
+  loanController.addLenderToLoan
+);
+
+// Legacy POST add-lender (keep for backwards compat)
 router.post(
   '/:id/add-lender',
   [
@@ -63,15 +88,13 @@ router.post(
   loanController.addLenderToLoan
 );
 
-router.get('/borrower/:borrowerId', loanController.getLoansByBorrower);
-
-router.get('/lender/:lenderId', loanController.getLoansByLender);
-
 router.put(
   '/:id/status',
   [
     param('id').isMongoId().withMessage('Invalid loan ID'),
-    body('status').isIn(['active', 'closed']).withMessage('Invalid status'),
+    body('status')
+      .isIn(['PENDING', 'PARTIALLY_FUNDED', 'FULLY_FUNDED', 'CLOSED'])
+      .withMessage('Invalid status'),
   ],
   handleValidationErrors,
   loanController.updateLoanStatus

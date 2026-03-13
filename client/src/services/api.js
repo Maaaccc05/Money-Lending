@@ -65,7 +65,7 @@ export const loanAPI = {
   getByLoanId: (loanId) => api.get(`/loans/details/${loanId}`),
   getByBorrower: (borrowerId) => api.get(`/loans/borrower/${borrowerId}`),
   getByLender: (lenderId) => api.get(`/loans/lender/${lenderId}`),
-  addLender: (loanId, data) => api.post(`/loans/${loanId}/add-lender`, data),
+  addLender: (loanId, data) => api.put(`/loans/${loanId}/add-lender`, data),
   updateStatus: (id, status) => api.put(`/loans/${id}/status`, { status }),
 };
 

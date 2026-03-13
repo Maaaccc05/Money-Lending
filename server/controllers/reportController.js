@@ -5,7 +5,7 @@ import dayjs from 'dayjs';
 
 export const getCurrentLoans = async (req, res) => {
   try {
-    const loans = await Loan.find({ status: 'active' })
+    const loans = await Loan.find({ status: { $in: ['PARTIALLY_FUNDED', 'FULLY_FUNDED', 'PENDING'] } })
       .populate('borrowerId', 'name surname')
       .populate('lenders.lenderId', 'name surname familyGroup')
       .sort({ createdAt: -1 });
@@ -164,8 +164,8 @@ export const getDashboardStats = async (req, res) => {
   try {
     const totalBorrowers = await Loan.distinct('borrowerId');
     const totalLenders = await Loan.distinct('lenders.lenderId');
-    const activeLoans = await Loan.countDocuments({ status: 'active' });
-    const closedLoans = await Loan.countDocuments({ status: 'closed' });
+    const activeLoans = await Loan.countDocuments({ status: { $in: ['PARTIALLY_FUNDED', 'FULLY_FUNDED', 'PENDING'] } });
+    const closedLoans = await Loan.countDocuments({ status: 'CLOSED' });
 
     const loanAmounts = await Loan.aggregate([
       {

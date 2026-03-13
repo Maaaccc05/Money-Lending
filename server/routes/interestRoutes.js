@@ -13,7 +13,8 @@ router.post(
   '/generate/:loanId',
   [
     param('loanId').isMongoId().withMessage('Invalid loan ID'),
-    body('startDate').isISO8601().withMessage('Valid start date is required'),
+    body('endDate').optional().isISO8601().withMessage('Valid end date is required (ISO8601)'),
+    body('startDate').optional().isISO8601().withMessage('Valid start date is required (ISO8601)'),
   ],
   handleValidationErrors,
   interestController.generateInterest

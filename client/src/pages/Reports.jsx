@@ -193,13 +193,14 @@ export const Reports = () => {
                           <td className="px-6 py-4 text-sm">{loan.interestRateAnnual}%</td>
                           <td className="px-6 py-4 text-sm">
                             <span
-                              className={`px-2 py-1 rounded text-xs font-semibold ${
-                                loan.status === 'active'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}
+                              className={`px-2 py-1 rounded text-xs font-semibold ${{
+                                FULLY_FUNDED: 'bg-green-100 text-green-800',
+                                PARTIALLY_FUNDED: 'bg-orange-100 text-orange-800',
+                                PENDING: 'bg-gray-100 text-gray-600',
+                                CLOSED: 'bg-red-100 text-red-800',
+                              }[loan.status] || 'bg-gray-100 text-gray-800'}`}
                             >
-                              {loan.status}
+                              {loan.status?.replace('_', ' ')}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-sm font-semibold">

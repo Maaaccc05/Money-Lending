@@ -22,18 +22,27 @@ export const calculateInterest = (principal, annualRate, startDate, endDate) => 
 };
 
 // Generate interest records for a loan period
-export const generateInterestRecords = (loan, startDate) => {
+// Each lender's interest starts from their own interestStartDate (= moneyReceivedDate)
+export const generateInterestRecords = (loan, endDate) => {
   const records = [];
-  const interestPeriodMonths = loan.interestPeriodMonths;
+  const periodEndDate = dayjs(endDate);
 
   for (const lender of loan.lenders) {
-    const endDate = dayjs(startDate).add(interestPeriodMonths, 'month');
+    // Use interestStartDate (= moneyReceivedDate) for this specific lender
+    const lenderStartDate = lender.interestStartDate || lender.moneyReceivedDate;
+
+    if (!lenderStartDate) continue;
+
+    const start = dayjs(lenderStartDate);
+
+    // Skip lenders whose money was received after the requested end date
+    if (start.isAfter(periodEndDate)) continue;
 
     const { interest, daysCount } = calculateInterest(
       lender.amountContributed,
       lender.lenderInterestRate,
-      startDate,
-      endDate
+      lenderStartDate,
+      periodEndDate.toDate()
     );
 
     records.push({
@@ -41,8 +50,8 @@ export const generateInterestRecords = (loan, startDate) => {
       lenderId: lender.lenderId,
       principalAmount: lender.amountContributed,
       interestRate: lender.lenderInterestRate,
-      startDate,
-      endDate: endDate.toDate(),
+      startDate: new Date(lenderStartDate),
+      endDate: periodEndDate.toDate(),
       daysCount,
       interestAmount: interest,
       status: 'pending',

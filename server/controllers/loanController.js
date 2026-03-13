@@ -3,9 +3,23 @@ import Borrower from '../models/Borrower.js';
 import Lender from '../models/Lender.js';
 import InterestRecord from '../models/InterestRecord.js';
 
+// Helper: compute status from funded vs total
+const computeFundingStatus = (funded, total) => {
+  if (funded <= 0) return 'PENDING';
+  if (funded >= total) return 'FULLY_FUNDED';
+  return 'PARTIALLY_FUNDED';
+};
+
 export const createLoan = async (req, res) => {
   try {
-    const { borrowerId, totalLoanAmount, disbursementDate, interestRateAnnual, interestPeriodMonths, lenders } = req.body;
+    const {
+      borrowerId,
+      totalLoanAmount,
+      disbursementDate,
+      interestRateAnnual,
+      interestPeriodMonths,
+      lenders,
+    } = req.body;
 
     // Validate borrower exists
     const borrower = await Borrower.findById(borrowerId);
@@ -13,8 +27,12 @@ export const createLoan = async (req, res) => {
       return res.status(404).json({ message: 'Borrower not found' });
     }
 
-    // Validate lenders exist and calculate total
-    let totalContributed = 0;
+    if (!lenders || lenders.length === 0) {
+      return res.status(400).json({ message: 'At least one lender is required' });
+    }
+
+    // Validate lenders exist
+    let fundedAmount = 0;
     const validatedLenders = [];
 
     for (const lenderData of lenders) {
@@ -22,29 +40,32 @@ export const createLoan = async (req, res) => {
       if (!lender) {
         return res.status(404).json({ message: `Lender with ID ${lenderData.lenderId} not found` });
       }
+      if (!lenderData.amountContributed || lenderData.amountContributed <= 0) {
+        return res.status(400).json({ message: 'Each lender must have an amount greater than 0' });
+      }
 
-      totalContributed += lenderData.amountContributed;
+      fundedAmount += parseFloat(lenderData.amountContributed);
       validatedLenders.push({
         lenderId: lenderData.lenderId,
-        amountContributed: lenderData.amountContributed,
-        lenderInterestRate: lenderData.lenderInterestRate,
+        amountContributed: parseFloat(lenderData.amountContributed),
+        lenderInterestRate: parseFloat(lenderData.lenderInterestRate),
         moneyReceivedDate: lenderData.moneyReceivedDate,
+        interestStartDate: lenderData.moneyReceivedDate, // always equal moneyReceivedDate
       });
     }
 
-    // Verify total contributed matches loan amount
-    if (totalContributed !== totalLoanAmount) {
-      return res.status(400).json({
-        message: `Total contributed amount (₹${totalContributed}) does not match loan amount (₹${totalLoanAmount})`,
-      });
-    }
+    const remainingAmount = Math.max(0, parseFloat(totalLoanAmount) - fundedAmount);
+    const status = computeFundingStatus(fundedAmount, parseFloat(totalLoanAmount));
 
     const loan = new Loan({
       borrowerId,
-      totalLoanAmount,
+      totalLoanAmount: parseFloat(totalLoanAmount),
+      fundedAmount,
+      remainingAmount,
       disbursementDate,
-      interestRateAnnual,
-      interestPeriodMonths,
+      interestRateAnnual: parseFloat(interestRateAnnual),
+      interestPeriodMonths: parseInt(interestPeriodMonths),
+      status,
       lenders: validatedLenders,
     });
 
@@ -70,22 +91,28 @@ export const addLenderToLoan = async (req, res) => {
       return res.status(404).json({ message: 'Loan not found' });
     }
 
+    if (loan.status === 'CLOSED') {
+      return res.status(400).json({ message: 'Cannot add lender to a closed loan' });
+    }
+
     const lender = await Lender.findById(lenderId);
     if (!lender) {
       return res.status(404).json({ message: 'Lender not found' });
     }
 
-    // Check if lender already exists in loan
-    if (loan.lenders.some((l) => l.lenderId.toString() === lenderId)) {
-      return res.status(400).json({ message: 'Lender already added to this loan' });
-    }
-
+    // Allow same lender to contribute multiple times (different dates/amounts)
     loan.lenders.push({
       lenderId,
-      amountContributed,
-      lenderInterestRate,
+      amountContributed: parseFloat(amountContributed),
+      lenderInterestRate: parseFloat(lenderInterestRate),
       moneyReceivedDate,
+      interestStartDate: moneyReceivedDate, // always equal moneyReceivedDate
     });
+
+    // Recalculate funded/remaining
+    loan.fundedAmount = loan.lenders.reduce((sum, l) => sum + l.amountContributed, 0);
+    loan.remainingAmount = Math.max(0, loan.totalLoanAmount - loan.fundedAmount);
+    loan.status = computeFundingStatus(loan.fundedAmount, loan.totalLoanAmount);
 
     await loan.save();
 
@@ -155,7 +182,7 @@ export const getLoanByLoanId = async (req, res) => {
     const loan = await Loan.findOne({ loanId })
       .populate({
         path: 'borrowerId',
-        select: '-aadhaarNumber', // expose everything except aadhaar
+        select: '-aadhaarNumber',
       })
       .populate({
         path: 'lenders.lenderId',
@@ -212,7 +239,7 @@ export const updateLoanStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!['active', 'closed'].includes(status)) {
+    if (!['PENDING', 'PARTIALLY_FUNDED', 'FULLY_FUNDED', 'CLOSED'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
