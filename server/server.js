@@ -23,21 +23,21 @@ connectDB();
 app.use(helmet());
 
 // CORS configuration
-app.use(
-  cors({
-    origin: process.env.NODE_ENV === 'production' ? 'http://localhost:5173' : true,
-    credentials: true,
-  })
-);
 // app.use(
 //   cors({
-//     origin: [
-//       "http://localhost:5173",
-//       "https://money-lending-alpha.vercel.app"
-//     ],
+//     origin: process.env.NODE_ENV === 'production' ? 'http://localhost:5173' : true,
 //     credentials: true,
 //   })
 // );
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://money-lending-alpha.vercel.app"
+    ],
+    credentials: true,
+  })
+);
 
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
