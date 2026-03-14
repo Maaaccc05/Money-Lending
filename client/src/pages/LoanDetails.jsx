@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Sidebar, Navbar } from '../components/index';
-import { loanAPI, lenderAPI } from '../services/api';
+import { loanAPI, lenderAPI, interestAPI } from '../services/api';
 import {
   ArrowLeft, User, Building, Landmark, Calendar, FileText,
   IndianRupee, PieChart, Users, AlertCircle, Plus, CheckCircle, X
@@ -35,6 +35,11 @@ export const LoanDetails = () => {
   const [addError, setAddError] = useState('');
   const [addSuccess, setAddSuccess] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+
+  // Generate interest state
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateSuccess, setGenerateSuccess] = useState('');
+  const [generateError, setGenerateError] = useState('');
 
   const fetchLoanData = async () => {
     setIsLoading(true);
@@ -101,6 +106,26 @@ export const LoanDetails = () => {
       setAddError(err.response?.data?.message || 'Failed to add lender');
     } finally {
       setIsAdding(false);
+    }
+  };
+
+  const handleGenerateInterest = async () => {
+    setGenerateError('');
+    setGenerateSuccess('');
+    setIsGenerating(true);
+    try {
+      // Calculate up to today by default
+      const { data: res } = await interestAPI.generate(data.loan._id, new Date().toISOString());
+      setGenerateSuccess(`${res.records?.length || 0} interest record(s) generated!`);
+      // Refresh the records
+      await fetchLoanData();
+      
+      // Auto dismiss success message after 5 seconds
+      setTimeout(() => setGenerateSuccess(''), 5000);
+    } catch (err) {
+      setGenerateError(err.response?.data?.message || 'Failed to generate interest');
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -256,28 +281,8 @@ export const LoanDetails = () => {
                         <p className="font-medium text-gray-900">{borrower.name} {borrower.surname}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500 mb-1">PAN Number</p>
-                        <p className="font-medium text-gray-900 uppercase font-mono bg-gray-50 px-2 py-0.5 rounded border border-gray-200 inline-block">
-                          {borrower.panNumber || 'N/A'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Bank Name</p>
-                        <p className="font-medium text-gray-900 flex items-center gap-1.5">
-                          <Building size={14} className="text-gray-400"/> {borrower.bankName || 'N/A'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Account Number</p>
-                        <p className="font-medium text-gray-900 font-mono tracking-wide">{borrower.bankAccountNumber || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">IFSC Code & Branch</p>
-                        <p className="font-medium text-gray-900 uppercase">{borrower.ifscCode || 'N/A'} ({borrower.branch || 'N/A'})</p>
-                      </div>
-                      <div className="md:col-span-2">
-                        <p className="text-sm text-gray-500 mb-1">Address</p>
-                        <p className="font-medium text-gray-800 text-sm">{borrower.address || 'N/A'}</p>
+                        <p className="text-sm text-gray-500 mb-1">Family Group</p>
+                        <p className="font-medium text-gray-900">{borrower.familyGroup || 'Other'}</p>
                       </div>
                     </div>
                   ) : (
@@ -461,9 +466,31 @@ export const LoanDetails = () => {
               {/* ── Right Column (Interest History) ── */}
               <div className="lg:col-span-1 space-y-6">
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sticky top-24">
-                  <h2 className="text-lg font-bold flex items-center gap-2 text-gray-800 mb-4 pb-3 border-b">
-                    <Landmark size={20} className="text-green-600" /> Interest History
-                  </h2>
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b">
+                    <h2 className="text-lg font-bold flex items-center gap-2 text-gray-800">
+                      <Landmark size={20} className="text-green-600" /> Interest History
+                    </h2>
+                    {loan.status !== 'CLOSED' && loan.status !== 'PENDING' && (
+                      <button
+                        onClick={handleGenerateInterest}
+                        disabled={isGenerating}
+                        className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
+                      >
+                        {isGenerating ? 'Generating...' : 'Generate Now'}
+                      </button>
+                    )}
+                  </div>
+
+                  {generateError && (
+                    <div className="mb-3 p-2 bg-red-50 text-red-600 border border-red-100 rounded text-xs">
+                      {generateError}
+                    </div>
+                  )}
+                  {generateSuccess && (
+                    <div className="mb-3 p-2 bg-green-50 text-green-700 border border-green-100 rounded text-xs flex items-center gap-1">
+                      <CheckCircle size={14} /> {generateSuccess}
+                    </div>
+                  )}
 
                   {interestRecords && interestRecords.length > 0 ? (
                     <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">

@@ -39,7 +39,7 @@ export const Login = () => {
         </div>
 
         <h1 className="text-3xl font-bold text-center text-gray-800 mb-2">MoneyLend</h1>
-        <p className="text-center text-gray-600 mb-8">Secure Loan Management Platform</p>
+        <p className="text-center text-gray-600 mb-8">Loan Management Platform</p>
 
         {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4">{error}</div>}
 
@@ -80,7 +80,7 @@ export const Login = () => {
         </form>
 
         <p className="text-center text-gray-600 text-sm mt-6">
-          Protected System • Secure Access Only
+          Internal Loan Management System
         </p>
       </div>
     </div>
