@@ -23,6 +23,7 @@ export const diffDaysInclusiveUtc = (startDate, endDate) => {
   return diff + 1;
 };
 
+
 export const endOfMonthUtc = (date) => {
   const d = toUtcStartOfDay(date);
   if (!d) return null;
