@@ -17,6 +17,7 @@ export const getCurrentLoans = async (req, res) => {
             $match: {
               loanId: loan._id,
               status: 'pending',
+              lenderId: { $ne: null },
             },
           },
           {
@@ -135,7 +136,7 @@ export const getPendingInterestReport = async (req, res) => {
   try {
     const report = await InterestRecord.aggregate([
       {
-        $match: { status: 'pending' },
+        $match: { status: 'pending', lenderId: { $ne: null } },
       },
       {
         $group: {
@@ -178,7 +179,7 @@ export const getDashboardStats = async (req, res) => {
 
     const pendingInterest = await InterestRecord.aggregate([
       {
-        $match: { status: 'pending' },
+        $match: { status: 'pending', lenderId: { $ne: null } },
       },
       {
         $group: {

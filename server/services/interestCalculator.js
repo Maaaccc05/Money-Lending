@@ -1,68 +1,109 @@
-import dayjs from 'dayjs';
+// NOTE: We intentionally use UTC date math (start-of-day) to avoid
+// timezone/DST causing off-by-one day errors.
 
-// Calculate daily interest rate
-const calculateDailyRate = (annualRate) => {
-  return annualRate / 365;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const toUtcStartOfDay = (value) => {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 };
 
-// Calculate interest for a period
-export const calculateInterest = (principal, annualRate, startDate, endDate) => {
-  const dailyRate = calculateDailyRate(annualRate / 100); // Convert percentage to decimal
+export const addDaysUtc = (date, days) => {
+  const d = toUtcStartOfDay(date);
+  if (!d) return null;
+  return new Date(d.getTime() + days * MS_PER_DAY);
+};
 
-  const start = dayjs(startDate);
-  const end = dayjs(endDate);
-  const daysCount = end.diff(start, 'day') + 1; // Include both start and end date
+export const diffDaysInclusiveUtc = (startDate, endDate) => {
+  const start = toUtcStartOfDay(startDate);
+  const end = toUtcStartOfDay(endDate);
+  if (!start || !end) return null;
+  const diff = Math.round((end.getTime() - start.getTime()) / MS_PER_DAY);
+  return diff + 1;
+};
 
-  const interest = principal * dailyRate * daysCount;
+export const endOfMonthUtc = (date) => {
+  const d = toUtcStartOfDay(date);
+  if (!d) return null;
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth();
+  // day 0 of next month is last day of current month
+  return new Date(Date.UTC(y, m + 1, 0));
+};
+
+const quarterCycleCandidatesUtc = (year) => [
+  new Date(Date.UTC(year, 2, 31)),  // Mar 31
+  new Date(Date.UTC(year, 5, 30)),  // Jun 30
+  new Date(Date.UTC(year, 8, 30)),  // Sep 30
+  new Date(Date.UTC(year, 11, 31)), // Dec 31
+];
+
+const halfYearCycleCandidatesUtc = (year) => [
+  new Date(Date.UTC(year, 2, 31)), // Mar 31
+  new Date(Date.UTC(year, 8, 30)), // Sep 30
+];
+
+export const getNextCycleEndDateUtc = (periodStart, cycleMonths) => {
+  const start = toUtcStartOfDay(periodStart);
+  if (!start) return null;
+
+  if (cycleMonths === 1) {
+    return endOfMonthUtc(start);
+  }
+
+  const year = start.getUTCFullYear();
+  const candidates =
+    cycleMonths === 3 ? quarterCycleCandidatesUtc(year) : halfYearCycleCandidatesUtc(year);
+
+  for (const c of candidates) {
+    if (c.getTime() >= start.getTime()) return c;
+  }
+
+  // Start is after the last cycle end date in this year; move to next year.
+  const nextYearCandidates =
+    cycleMonths === 3 ? quarterCycleCandidatesUtc(year + 1) : halfYearCycleCandidatesUtc(year + 1);
+  return nextYearCandidates[0];
+};
+
+export const calculateSimpleInterestDaily = ({ principal, annualRatePct, periodStart, periodEnd }) => {
+  const days = diffDaysInclusiveUtc(periodStart, periodEnd);
+  if (days == null) {
+    throw new Error('Invalid dates for interest calculation');
+  }
+
+  const rateDecimal = (Number(annualRatePct) || 0) / 100;
+  const interest = (Number(principal) || 0) * rateDecimal * (days / 365);
 
   return {
-    interest: Math.round(interest * 100) / 100, // Round to 2 decimal places
-    daysCount,
+    interestAmount: Math.round(interest * 100) / 100,
+    days,
   };
 };
 
-// Generate interest records for a loan period
-// Each lender's interest starts from their own interestStartDate (= moneyReceivedDate)
-export const generateInterestRecords = (loan, endDate) => {
-  const records = [];
-  const periodEndDate = dayjs(endDate);
+export const getNextInterestPeriodUtc = ({ baseStartDate, lastPeriodEnd, cycleMonths }) => {
+  const base = toUtcStartOfDay(baseStartDate);
+  if (!base) return null;
 
-  for (const lender of loan.lenders) {
-    // Use interestStartDate (= moneyReceivedDate) for this specific lender
-    const lenderStartDate = lender.interestStartDate || lender.moneyReceivedDate;
-
-    if (!lenderStartDate) continue;
-
-    const start = dayjs(lenderStartDate);
-
-    // Skip lenders whose money was received after the requested end date
-    if (start.isAfter(periodEndDate)) continue;
-
-    const { interest, daysCount } = calculateInterest(
-      lender.amountContributed,
-      lender.lenderInterestRate,
-      lenderStartDate,
-      periodEndDate.toDate()
-    );
-
-    records.push({
-      loanId: loan._id,
-      lenderId: lender.lenderId,
-      principalAmount: lender.amountContributed,
-      interestRate: lender.lenderInterestRate,
-      startDate: new Date(lenderStartDate),
-      endDate: periodEndDate.toDate(),
-      daysCount,
-      interestAmount: interest,
-      status: 'pending',
-    });
+  let periodStart = base;
+  if (lastPeriodEnd) {
+    const next = addDaysUtc(lastPeriodEnd, 1);
+    if (!next) return null;
+    // Never move earlier than base start date.
+    periodStart = next.getTime() > base.getTime() ? next : base;
   }
 
-  return records;
+  const periodEnd = getNextCycleEndDateUtc(periodStart, cycleMonths);
+  if (!periodEnd) return null;
+
+  return { periodStart, periodEnd };
 };
 
 export default {
-  calculateInterest,
-  generateInterestRecords,
-  calculateDailyRate,
+  addDaysUtc,
+  diffDaysInclusiveUtc,
+  endOfMonthUtc,
+  getNextCycleEndDateUtc,
+  calculateSimpleInterestDaily,
+  getNextInterestPeriodUtc,
 };

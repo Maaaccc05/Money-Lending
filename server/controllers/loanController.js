@@ -2,6 +2,47 @@ import Loan from '../models/Loan.js';
 import Borrower from '../models/Borrower.js';
 import Lender from '../models/Lender.js';
 import InterestRecord from '../models/InterestRecord.js';
+import { calculateSimpleInterestDaily } from '../services/interestCalculator.js';
+
+const fullName = (person) => {
+  if (!person) return '';
+  const parts = [person.name, person.surname].filter(Boolean);
+  return parts.join(' ').trim();
+};
+
+const toInterestView = ({ record, loan }) => {
+  const startDate = record.periodStart || record.startDate;
+  const endDate = record.periodEnd || record.endDate;
+  const days = record.days ?? record.daysCount;
+
+  const borrowerInterestCalc = calculateSimpleInterestDaily({
+    principal: loan.totalLoanAmount,
+    annualRatePct: loan.interestRateAnnual,
+    periodStart: startDate,
+    periodEnd: endDate,
+  });
+
+  const isBorrowerRecord = !record.lenderId;
+  const lenderInterest = isBorrowerRecord ? 0 : record.interestAmount;
+  const borrowerInterest = isBorrowerRecord ? record.interestAmount : borrowerInterestCalc.interestAmount;
+
+  return {
+    _id: record._id,
+    loanId: loan.loanId,
+    borrowerName: fullName(loan.borrowerId),
+    lenderName: isBorrowerRecord ? '' : fullName(record.lenderId),
+    principal: record.principal ?? record.principalAmount,
+    borrowerInterest,
+    lenderInterest,
+    rate: isBorrowerRecord ? loan.interestRateAnnual : (record.lenderRate ?? record.interestRate),
+    days,
+    startDate,
+    endDate,
+    status: record.status,
+    // backward compat
+    interestAmount: record.interestAmount,
+  };
+};
 
 // Helper: compute status from funded vs total
 const computeFundingStatus = (funded, total) => {
@@ -196,9 +237,12 @@ export const getLoanByLoanId = async (req, res) => {
     // Fetch associated interest records
     const interestRecords = await InterestRecord.find({ loanId: loan._id })
       .populate('lenderId', 'name surname familyGroup')
-      .sort({ startDate: 1 });
+      .sort({ periodStart: 1, startDate: 1 });
 
-    res.status(200).json({ loan, interestRecords });
+    res.status(200).json({
+      loan,
+      interestRecords: interestRecords.map((r) => toInterestView({ record: r, loan })),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

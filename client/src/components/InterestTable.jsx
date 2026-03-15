@@ -9,11 +9,13 @@ export const InterestTable = ({ interests = [], onMarkPaid, pagination }) => {
           <thead className="bg-gray-50 border-b">
             <tr>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Loan ID</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Lender</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Borrower Name</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Lender Name</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Principal</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Borrower Interest</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Lender Interest</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Rate</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Days</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Interest</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">End Date</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
@@ -22,14 +24,16 @@ export const InterestTable = ({ interests = [], onMarkPaid, pagination }) => {
           <tbody className="divide-y">
             {interests.map((interest) => (
               <tr key={interest._id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 text-sm text-gray-900">{interest.loanId?.loanId}</td>
-                <td className="px-6 py-4 text-sm text-gray-900">{interest.lenderId?.name}</td>
-                <td className="px-6 py-4 text-sm text-gray-900">₹{interest.principalAmount.toLocaleString()}</td>
-                <td className="px-6 py-4 text-sm text-gray-900">{interest.interestRate}%</td>
-                <td className="px-6 py-4 text-sm text-gray-900">{interest.daysCount}</td>
-                <td className="px-6 py-4 text-sm font-semibold text-gray-900">₹{interest.interestAmount.toLocaleString()}</td>
+                <td className="px-6 py-4 text-sm text-gray-900">{interest.loanId}</td>
+                <td className="px-6 py-4 text-sm text-gray-900">{interest.borrowerName || '-'}</td>
+                <td className="px-6 py-4 text-sm text-gray-900">{interest.lenderName || '-'}</td>
+                <td className="px-6 py-4 text-sm text-gray-900">₹{Number(interest.principal || 0).toLocaleString('en-IN')}</td>
+                <td className="px-6 py-4 text-sm font-semibold text-gray-900">₹{Number(interest.borrowerInterest || 0).toLocaleString('en-IN')}</td>
+                <td className="px-6 py-4 text-sm font-semibold text-gray-900">₹{Number(interest.lenderInterest || 0).toLocaleString('en-IN')}</td>
+                <td className="px-6 py-4 text-sm text-gray-900">{interest.rate}%</td>
+                <td className="px-6 py-4 text-sm text-gray-900">{interest.days}</td>
                 <td className="px-6 py-4 text-sm text-gray-900">
-                  {new Date(interest.endDate).toLocaleDateString()}
+                  {interest.endDate ? new Date(interest.endDate).toLocaleDateString('en-IN') : '-'}
                 </td>
                 <td className="px-6 py-4 text-sm">
                   <span
