@@ -40,6 +40,12 @@ const loanSchema = new mongoose.Schema(
       enum: [1, 3, 6],
       required: [true, 'Interest period must be 1, 3, or 6 months'],
     },
+    // New: operational status for interest generation
+    loanStatus: {
+      type: String,
+      enum: ['ACTIVE', 'CLOSED'],
+      default: 'ACTIVE',
+    },
     status: {
       type: String,
       enum: ['PENDING', 'PARTIALLY_FUNDED', 'FULLY_FUNDED', 'CLOSED'],

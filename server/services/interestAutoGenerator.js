@@ -55,6 +55,16 @@ export const generateDueInterestForLoan = async ({ loan, asOf } = {}) => {
     throw new Error('generateDueInterestForLoan requires a loan document');
   }
 
+  // Never generate interest for closed loans
+  if (loan?.loanStatus === 'CLOSED' || loan?.status === 'CLOSED') {
+    return {
+      borrowerRecordsCreated: 0,
+      lenderRecordsCreated: 0,
+      skippedDuplicates: 0,
+      errors: 0,
+    };
+  }
+
   const asOfUtc = utcStartOfDay(asOf ?? new Date());
   if (!asOfUtc) {
     throw new Error('Invalid asOf date for interest generation');
@@ -201,7 +211,10 @@ export const generateDueInterestForLoan = async ({ loan, asOf } = {}) => {
 };
 
 export const generateDueInterestForAllLoans = async ({ asOf = new Date() } = {}) => {
-  const loans = await Loan.find({ status: { $ne: 'CLOSED' } }).lean();
+  const loans = await Loan.find({
+    status: { $ne: 'CLOSED' },
+    loanStatus: { $ne: 'CLOSED' },
+  }).lean();
 
   const asOfUtc = utcStartOfDay(asOf ?? new Date());
   if (!asOfUtc) {

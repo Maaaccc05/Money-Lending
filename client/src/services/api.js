@@ -66,6 +66,13 @@ export const loanAPI = {
   getByBorrower: (borrowerId) => api.get(`/loans/borrower/${borrowerId}`),
   getByLender: (lenderId) => api.get(`/loans/lender/${lenderId}`),
   addLender: (loanId, data) => api.put(`/loans/${loanId}/add-lender`, data),
+  update: (loanId, data) => api.put(`/loans/${loanId}`, data),
+  close: (loanId) => api.patch(`/loans/${loanId}/close`),
+  delete: (loanId) => api.delete(`/loans/${loanId}`),
+  updateLenderContribution: (loanId, lenderEntryId, data) =>
+    api.put(`/loans/${loanId}/lenders/${lenderEntryId}`, data),
+  removeLenderContribution: (loanId, lenderEntryId) =>
+    api.delete(`/loans/${loanId}/lenders/${lenderEntryId}`),
   updateStatus: (id, status) => api.put(`/loans/${id}/status`, { status }),
 };
 

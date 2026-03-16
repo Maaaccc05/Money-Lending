@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Sidebar, Navbar } from '../components/index';
-import { loanAPI, lenderAPI } from '../services/api';
+import { borrowerAPI, loanAPI, lenderAPI } from '../services/api';
 import {
   ArrowLeft, User, Building, Landmark, Calendar, FileText,
   IndianRupee, PieChart, Users, AlertCircle, Plus, CheckCircle, X
@@ -19,6 +19,7 @@ const STATUS_STYLE = {
 
 export const LoanDetails = () => {
   const { loanId } = useParams();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,6 +40,45 @@ export const LoanDetails = () => {
   // Live interest (calculated on demand, not stored)
   const [showLiveInterest, setShowLiveInterest] = useState(false);
   const [liveInterest, setLiveInterest] = useState(null);
+
+  // Edit loan
+  const [showEditLoan, setShowEditLoan] = useState(false);
+  const [editLoanForm, setEditLoanForm] = useState({
+    totalLoanAmount: '',
+    disbursementDate: '',
+    interestRateAnnual: '',
+    interestPeriodMonths: '1',
+  });
+  const [editLoanError, setEditLoanError] = useState('');
+  const [isSavingLoan, setIsSavingLoan] = useState(false);
+
+  // Edit borrower
+  const [showEditBorrower, setShowEditBorrower] = useState(false);
+  const [editBorrowerForm, setEditBorrowerForm] = useState({ name: '', surname: '', familyGroup: '' });
+  const [editBorrowerError, setEditBorrowerError] = useState('');
+  const [isSavingBorrower, setIsSavingBorrower] = useState(false);
+
+  // Edit lender contribution
+  const [showEditLender, setShowEditLender] = useState(false);
+  const [editLenderEntry, setEditLenderEntry] = useState(null);
+  const [editLenderForm, setEditLenderForm] = useState({
+    name: '',
+    surname: '',
+    amountContributed: '',
+    lenderInterestRate: '',
+    moneyReceivedDate: '',
+  });
+  const [editLenderError, setEditLenderError] = useState('');
+  const [isSavingLender, setIsSavingLender] = useState(false);
+
+  // Close / Delete
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [closeError, setCloseError] = useState('');
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const toUtcStartOfDay = (value) => {
     const d = value instanceof Date ? value : new Date(value);
@@ -68,6 +108,16 @@ export const LoanDetails = () => {
     };
   };
 
+  const toDateInputValue = (value) => {
+    if (!value) return '';
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   const fetchLoanData = async () => {
     setIsLoading(true);
     setError('');
@@ -89,6 +139,20 @@ export const LoanDetails = () => {
   useEffect(() => {
     setShowLiveInterest(false);
     setLiveInterest(null);
+  }, [loanId]);
+
+  useEffect(() => {
+    // Reset modals when switching loans
+    setShowEditLoan(false);
+    setShowEditBorrower(false);
+    setShowEditLender(false);
+    setShowCloseConfirm(false);
+    setShowDeleteConfirm(false);
+    setEditLoanError('');
+    setEditBorrowerError('');
+    setEditLenderError('');
+    setCloseError('');
+    setDeleteError('');
   }, [loanId]);
 
   // ----- Lender search for add-lender form -----
@@ -199,6 +263,230 @@ export const LoanDetails = () => {
     setShowLiveInterest(true);
   };
 
+  const openEditLoan = () => {
+    const loan = data?.loan;
+    if (!loan) return;
+    setEditLoanError('');
+    setEditLoanForm({
+      totalLoanAmount: String(loan.totalLoanAmount ?? ''),
+      disbursementDate: toDateInputValue(loan.disbursementDate),
+      interestRateAnnual: String(loan.interestRateAnnual ?? ''),
+      interestPeriodMonths: String(loan.interestPeriodMonths ?? '1'),
+    });
+    setShowEditLoan(true);
+  };
+
+  const saveLoanEdits = async () => {
+    const loan = data?.loan;
+    if (!loan) return;
+    setEditLoanError('');
+
+    const total = parseFloat(editLoanForm.totalLoanAmount);
+    const rate = parseFloat(editLoanForm.interestRateAnnual);
+    const period = parseInt(editLoanForm.interestPeriodMonths, 10);
+
+    if (Number.isNaN(total) || total <= 0) {
+      setEditLoanError('Loan amount must be greater than 0');
+      return;
+    }
+    if (!editLoanForm.disbursementDate) {
+      setEditLoanError('Please select a disbursement date');
+      return;
+    }
+    if (Number.isNaN(rate) || rate < 0) {
+      setEditLoanError('Interest rate must be 0 or more');
+      return;
+    }
+    if (![1, 3, 6].includes(period)) {
+      setEditLoanError('Interest period must be 1, 3, or 6 months');
+      return;
+    }
+
+    // Optional guard: contributions cannot exceed total
+    const currentFunded = (loan.fundedAmount ?? loan.lenders.reduce((s, l) => s + (Number(l.amountContributed) || 0), 0));
+    if (currentFunded > total) {
+      setEditLoanError('Loan amount cannot be less than total contributions');
+      return;
+    }
+
+    setIsSavingLoan(true);
+    try {
+      await loanAPI.update(loan._id, {
+        totalLoanAmount: total,
+        disbursementDate: editLoanForm.disbursementDate,
+        interestRateAnnual: rate,
+        interestPeriodMonths: period,
+      });
+      setShowEditLoan(false);
+      await fetchLoanData();
+    } catch (err) {
+      setEditLoanError(err.response?.data?.message || 'Failed to update loan');
+    } finally {
+      setIsSavingLoan(false);
+    }
+  };
+
+  const openEditBorrower = () => {
+    const b = data?.loan?.borrowerId;
+    if (!b?._id) return;
+    setEditBorrowerError('');
+    setEditBorrowerForm({
+      name: b.name || '',
+      surname: b.surname || '',
+      familyGroup: b.familyGroup || '',
+    });
+    setShowEditBorrower(true);
+  };
+
+  const saveBorrowerEdits = async () => {
+    const b = data?.loan?.borrowerId;
+    if (!b?._id) return;
+    setEditBorrowerError('');
+    if (!editBorrowerForm.name.trim() || !editBorrowerForm.surname.trim()) {
+      setEditBorrowerError('Borrower name and surname are required');
+      return;
+    }
+    if (!editBorrowerForm.familyGroup.trim()) {
+      setEditBorrowerError('Family group is required');
+      return;
+    }
+
+    setIsSavingBorrower(true);
+    try {
+      await borrowerAPI.update(b._id, {
+        name: editBorrowerForm.name.trim(),
+        surname: editBorrowerForm.surname.trim(),
+        familyGroup: editBorrowerForm.familyGroup.trim(),
+      });
+      setShowEditBorrower(false);
+      await fetchLoanData();
+    } catch (err) {
+      setEditBorrowerError(err.response?.data?.message || 'Failed to update borrower');
+    } finally {
+      setIsSavingBorrower(false);
+    }
+  };
+
+  const openEditLenderContribution = (entry) => {
+    if (!entry?._id) return;
+    setEditLenderError('');
+    setEditLenderEntry(entry);
+    setEditLenderForm({
+      name: entry.lenderId?.name || '',
+      surname: entry.lenderId?.surname || '',
+      amountContributed: String(entry.amountContributed ?? ''),
+      lenderInterestRate: String(entry.lenderInterestRate ?? ''),
+      moneyReceivedDate: toDateInputValue(entry.moneyReceivedDate),
+    });
+    setShowEditLender(true);
+  };
+
+  const saveLenderEdits = async () => {
+    const loan = data?.loan;
+    const entry = editLenderEntry;
+    if (!loan?._id || !entry?._id) return;
+    setEditLenderError('');
+
+    const amount = parseFloat(editLenderForm.amountContributed);
+    const rate = parseFloat(editLenderForm.lenderInterestRate);
+    if (!editLenderForm.name.trim() || !editLenderForm.surname.trim()) {
+      setEditLenderError('Lender name and surname are required');
+      return;
+    }
+    if (Number.isNaN(amount) || amount <= 0) {
+      setEditLenderError('Amount must be greater than 0');
+      return;
+    }
+    if (Number.isNaN(rate) || rate < 0) {
+      setEditLenderError('Interest rate must be 0 or more');
+      return;
+    }
+    if (!editLenderForm.moneyReceivedDate) {
+      setEditLenderError('Please select a receive date');
+      return;
+    }
+
+    // Optional guard: contributions cannot exceed total after edit
+    const currentFunded = (loan.fundedAmount ?? loan.lenders.reduce((s, l) => s + (Number(l.amountContributed) || 0), 0));
+    const newFunded = currentFunded - (Number(entry.amountContributed) || 0) + amount;
+    if (newFunded > loan.totalLoanAmount) {
+      setEditLenderError('Total lender contributions cannot exceed the loan amount');
+      return;
+    }
+
+    setIsSavingLender(true);
+    try {
+      // Update lender name (master record)
+      if (entry.lenderId?._id) {
+        await lenderAPI.update(entry.lenderId._id, {
+          name: editLenderForm.name.trim(),
+          surname: editLenderForm.surname.trim(),
+        });
+      }
+
+      // Update contribution in loan
+      await loanAPI.updateLenderContribution(loan._id, entry._id, {
+        amountContributed: amount,
+        lenderInterestRate: rate,
+        moneyReceivedDate: editLenderForm.moneyReceivedDate,
+      });
+
+      setShowEditLender(false);
+      setEditLenderEntry(null);
+      await fetchLoanData();
+    } catch (err) {
+      setEditLenderError(err.response?.data?.message || 'Failed to update lender contribution');
+    } finally {
+      setIsSavingLender(false);
+    }
+  };
+
+  const removeLenderContribution = async (entry) => {
+    const loan = data?.loan;
+    if (!loan?._id || !entry?._id) return;
+    const lenderName = `${entry.lenderId?.name || ''} ${entry.lenderId?.surname || ''}`.trim() || 'this lender';
+    const ok = window.confirm(`Remove contribution for ${lenderName}?`);
+    if (!ok) return;
+    try {
+      await loanAPI.removeLenderContribution(loan._id, entry._id);
+      await fetchLoanData();
+    } catch (err) {
+      window.alert(err.response?.data?.message || 'Failed to remove lender contribution');
+    }
+  };
+
+  const confirmCloseLoan = async () => {
+    const loan = data?.loan;
+    if (!loan?._id) return;
+    setCloseError('');
+    setIsClosing(true);
+    try {
+      await loanAPI.close(loan._id);
+      setShowCloseConfirm(false);
+      await fetchLoanData();
+    } catch (err) {
+      setCloseError(err.response?.data?.message || 'Failed to close loan');
+    } finally {
+      setIsClosing(false);
+    }
+  };
+
+  const confirmDeleteLoan = async () => {
+    const loan = data?.loan;
+    if (!loan?._id) return;
+    setDeleteError('');
+    setIsDeleting(true);
+    try {
+      await loanAPI.delete(loan._id);
+      setShowDeleteConfirm(false);
+      navigate('/current-loans');
+    } catch (err) {
+      setDeleteError(err.response?.data?.message || 'Failed to delete loan');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // ----- Loading / Error states -----
   if (isLoading) {
     return (
@@ -289,9 +577,32 @@ export const LoanDetails = () => {
                       <FileText size={20} className="text-blue-600 shrink-0" />
                       <span className="truncate">Loan <span className="text-blue-600">({loan.loanId})</span></span>
                     </h2>
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold shrink-0 ml-4 border ${STATUS_STYLE[loan.status] || 'bg-gray-100 text-gray-700'}`}>
-                      {loan.status?.replace('_', ' ')}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0 ml-4">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${STATUS_STYLE[loan.status] || 'bg-gray-100 text-gray-700'}`}>
+                        {loan.status?.replace('_', ' ')}
+                      </span>
+                      <button
+                        onClick={openEditLoan}
+                        disabled={loan.status === 'CLOSED'}
+                        className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        Edit Loan
+                      </button>
+                      {loan.status !== 'CLOSED' && (
+                        <button
+                          onClick={() => setShowCloseConfirm(true)}
+                          className="text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          Close Loan
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
 
                   {/* Key stats */}
@@ -341,9 +652,19 @@ export const LoanDetails = () => {
 
                 {/* 2. Borrower Details */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                  <h2 className="text-xl font-bold flex items-center gap-2 text-gray-800 mb-6 pb-4 border-b">
-                    <User size={22} className="text-orange-600" /> Borrower Details
-                  </h2>
+                  <div className="flex items-center justify-between mb-6 pb-4 border-b">
+                    <h2 className="text-xl font-bold flex items-center gap-2 text-gray-800">
+                      <User size={22} className="text-orange-600" /> Borrower Details
+                    </h2>
+                    {borrower?._id && (
+                      <button
+                        onClick={openEditBorrower}
+                        className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        Edit Borrower
+                      </button>
+                    )}
+                  </div>
                   {borrower ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-y-5 gap-x-8">
                       <div>
@@ -396,6 +717,7 @@ export const LoanDetails = () => {
                                     <th className="px-4 py-2 border-b">Amount</th>
                                     <th className="px-4 py-2 border-b">Rate(%)</th>
                                     <th className="px-4 py-2 border-b">Recv. Date</th>
+                                    <th className="px-4 py-2 border-b text-right">Actions</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -410,6 +732,22 @@ export const LoanDetails = () => {
                                       <td className="px-4 py-2.5 text-gray-600">{m.lenderInterestRate}%</td>
                                       <td className="px-4 py-2.5 text-gray-600 tabular-nums">
                                         {new Date(m.moneyReceivedDate).toLocaleDateString('en-IN')}
+                                      </td>
+                                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                        <button
+                                          onClick={() => openEditLenderContribution(m)}
+                                          disabled={loan.status === 'CLOSED'}
+                                          className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          onClick={() => removeLenderContribution(m)}
+                                          disabled={loan.status === 'CLOSED'}
+                                          className="ml-2 text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                                        >
+                                          Remove
+                                        </button>
                                       </td>
                                     </tr>
                                   ))}
@@ -611,6 +949,304 @@ export const LoanDetails = () => {
                 </div>
               </div>
             </div>
+
+            {/* ---- Modals ---- */}
+            {showEditLoan && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl border border-gray-100">
+                  <div className="flex items-center justify-between px-6 py-4 border-b">
+                    <h3 className="text-lg font-bold text-gray-800">Edit Loan</h3>
+                    <button onClick={() => setShowEditLoan(false)} className="text-gray-400 hover:text-gray-600">
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <div className="p-6 space-y-4">
+                    {editLoanError && (
+                      <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                        <AlertCircle size={15} /> {editLoanError}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Loan Amount (₹)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={editLoanForm.totalLoanAmount}
+                          onChange={(e) => setEditLoanForm((p) => ({ ...p, totalLoanAmount: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Disbursement Date</label>
+                        <input
+                          type="date"
+                          value={editLoanForm.disbursementDate}
+                          onChange={(e) => setEditLoanForm((p) => ({ ...p, disbursementDate: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Interest Rate (% / yr)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={editLoanForm.interestRateAnnual}
+                          onChange={(e) => setEditLoanForm((p) => ({ ...p, interestRateAnnual: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Interest Period</label>
+                        <select
+                          value={editLoanForm.interestPeriodMonths}
+                          onChange={(e) => setEditLoanForm((p) => ({ ...p, interestPeriodMonths: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="1">1 month</option>
+                          <option value="3">3 months</option>
+                          <option value="6">6 months</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        onClick={saveLoanEdits}
+                        disabled={isSavingLoan}
+                        className="flex-1 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50 transition-colors"
+                      >
+                        {isSavingLoan ? 'Saving...' : 'Save Changes'}
+                      </button>
+                      <button
+                        onClick={() => setShowEditLoan(false)}
+                        className="flex-1 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showEditBorrower && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl border border-gray-100">
+                  <div className="flex items-center justify-between px-6 py-4 border-b">
+                    <h3 className="text-lg font-bold text-gray-800">Edit Borrower</h3>
+                    <button onClick={() => setShowEditBorrower(false)} className="text-gray-400 hover:text-gray-600">
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    {editBorrowerError && (
+                      <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                        <AlertCircle size={15} /> {editBorrowerError}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Name</label>
+                        <input
+                          type="text"
+                          value={editBorrowerForm.name}
+                          onChange={(e) => setEditBorrowerForm((p) => ({ ...p, name: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Surname</label>
+                        <input
+                          type="text"
+                          value={editBorrowerForm.surname}
+                          onChange={(e) => setEditBorrowerForm((p) => ({ ...p, surname: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Family Group</label>
+                        <input
+                          type="text"
+                          value={editBorrowerForm.familyGroup}
+                          onChange={(e) => setEditBorrowerForm((p) => ({ ...p, familyGroup: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        onClick={saveBorrowerEdits}
+                        disabled={isSavingBorrower}
+                        className="flex-1 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50 transition-colors"
+                      >
+                        {isSavingBorrower ? 'Saving...' : 'Save Changes'}
+                      </button>
+                      <button
+                        onClick={() => setShowEditBorrower(false)}
+                        className="flex-1 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showEditLender && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl border border-gray-100">
+                  <div className="flex items-center justify-between px-6 py-4 border-b">
+                    <h3 className="text-lg font-bold text-gray-800">Edit Lender Contribution</h3>
+                    <button onClick={() => setShowEditLender(false)} className="text-gray-400 hover:text-gray-600">
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    {editLenderError && (
+                      <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                        <AlertCircle size={15} /> {editLenderError}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Lender Name</label>
+                        <input
+                          type="text"
+                          value={editLenderForm.name}
+                          onChange={(e) => setEditLenderForm((p) => ({ ...p, name: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Surname</label>
+                        <input
+                          type="text"
+                          value={editLenderForm.surname}
+                          onChange={(e) => setEditLenderForm((p) => ({ ...p, surname: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Amount (₹)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={editLenderForm.amountContributed}
+                          onChange={(e) => setEditLenderForm((p) => ({ ...p, amountContributed: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Interest Rate (%)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={editLenderForm.lenderInterestRate}
+                          onChange={(e) => setEditLenderForm((p) => ({ ...p, lenderInterestRate: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Receive Date</label>
+                        <input
+                          type="date"
+                          value={editLenderForm.moneyReceivedDate}
+                          onChange={(e) => setEditLenderForm((p) => ({ ...p, moneyReceivedDate: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        onClick={saveLenderEdits}
+                        disabled={isSavingLender}
+                        className="flex-1 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50 transition-colors"
+                      >
+                        {isSavingLender ? 'Saving...' : 'Save Changes'}
+                      </button>
+                      <button
+                        onClick={() => setShowEditLender(false)}
+                        className="flex-1 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showCloseConfirm && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-100">
+                  <div className="px-6 py-4 border-b">
+                    <h3 className="text-lg font-bold text-gray-800">Close Loan</h3>
+                    <p className="text-sm text-gray-600 mt-1">Closing stops any new interest generation for this loan.</p>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    {closeError && (
+                      <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                        <AlertCircle size={15} /> {closeError}
+                      </div>
+                    )}
+                    <div className="flex gap-3">
+                      <button
+                        onClick={confirmCloseLoan}
+                        disabled={isClosing}
+                        className="flex-1 bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-800 font-medium disabled:opacity-50 transition-colors"
+                      >
+                        {isClosing ? 'Closing...' : 'Confirm Close'}
+                      </button>
+                      <button
+                        onClick={() => setShowCloseConfirm(false)}
+                        className="flex-1 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showDeleteConfirm && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-100">
+                  <div className="px-6 py-4 border-b">
+                    <h3 className="text-lg font-bold text-gray-800">Delete Loan</h3>
+                    <p className="text-sm text-gray-600 mt-1">This will delete the loan and all related interest records.</p>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    {deleteError && (
+                      <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                        <AlertCircle size={15} /> {deleteError}
+                      </div>
+                    )}
+                    <div className="flex gap-3">
+                      <button
+                        onClick={confirmDeleteLoan}
+                        disabled={isDeleting}
+                        className="flex-1 bg-red-600 text-white px-5 py-2.5 rounded-lg hover:bg-red-700 font-medium disabled:opacity-50 transition-colors"
+                      >
+                        {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="flex-1 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

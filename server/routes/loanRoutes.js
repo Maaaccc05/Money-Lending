@@ -48,6 +48,48 @@ router.get(
   loanController.getLoanById
 );
 
+// Update loan details (amount, disbursement date, borrower rate, period)
+router.put(
+  '/:id',
+  [
+    param('id').isMongoId().withMessage('Invalid loan ID'),
+    body('totalLoanAmount').optional().isNumeric().withMessage('Valid loan amount is required').toFloat(),
+    body('disbursementDate').optional().isISO8601().withMessage('Valid disbursement date is required'),
+    body('interestRateAnnual').optional().isNumeric().withMessage('Valid interest rate is required').toFloat(),
+    body('interestPeriodMonths')
+      .optional()
+      .isIn(['1', '3', '6', 1, 3, 6])
+      .withMessage('Interest period must be 1, 3, or 6 months'),
+  ],
+  handleValidationErrors,
+  loanController.updateLoan
+);
+
+// Update a lender contribution entry inside a loan
+router.put(
+  '/:loanId/lenders/:lenderEntryId',
+  [
+    param('loanId').isMongoId().withMessage('Invalid loan ID'),
+    param('lenderEntryId').isMongoId().withMessage('Invalid lender contribution ID'),
+    body('amountContributed').optional().isNumeric().withMessage('Valid amount is required').toFloat(),
+    body('lenderInterestRate').optional().isNumeric().withMessage('Valid interest rate is required').toFloat(),
+    body('moneyReceivedDate').optional().isISO8601().withMessage('Valid money received date is required'),
+  ],
+  handleValidationErrors,
+  loanController.updateLenderContribution
+);
+
+// Remove a lender contribution entry from a loan
+router.delete(
+  '/:loanId/lenders/:lenderEntryId',
+  [
+    param('loanId').isMongoId().withMessage('Invalid loan ID'),
+    param('lenderEntryId').isMongoId().withMessage('Invalid lender contribution ID'),
+  ],
+  handleValidationErrors,
+  loanController.removeLenderContribution
+);
+
 // PUT route to add a new lender contribution to an existing loan
 router.put(
   '/:loanId/add-lender',
@@ -98,6 +140,22 @@ router.put(
   ],
   handleValidationErrors,
   loanController.updateLoanStatus
+);
+
+// Close loan (stop interest generation)
+router.patch(
+  '/:id/close',
+  [param('id').isMongoId().withMessage('Invalid loan ID')],
+  handleValidationErrors,
+  loanController.closeLoan
+);
+
+// Delete loan and related interest records
+router.delete(
+  '/:id',
+  [param('id').isMongoId().withMessage('Invalid loan ID')],
+  handleValidationErrors,
+  loanController.deleteLoan
 );
 
 export default router;
