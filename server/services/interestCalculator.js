@@ -45,6 +45,24 @@ const halfYearCycleCandidatesUtc = (year) => [
   new Date(Date.UTC(year, 8, 30)), // Sep 30
 ];
 
+const addMonthsClampedUtc = (date, months) => {
+  const d = toUtcStartOfDay(date);
+  if (!d) return null;
+
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth();
+  const day = d.getUTCDate();
+
+  // Compute target year/month via UTC date rollover, then clamp day-of-month.
+  const firstOfTargetMonth = new Date(Date.UTC(y, m + months, 1));
+  const targetYear = firstOfTargetMonth.getUTCFullYear();
+  const targetMonth = firstOfTargetMonth.getUTCMonth();
+  const lastDayOfTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(day, lastDayOfTargetMonth);
+
+  return new Date(Date.UTC(targetYear, targetMonth, clampedDay));
+};
+
 export const getNextCycleEndDateUtc = (periodStart, cycleMonths) => {
   const start = toUtcStartOfDay(periodStart);
   if (!start) return null;
@@ -53,9 +71,14 @@ export const getNextCycleEndDateUtc = (periodStart, cycleMonths) => {
     return endOfMonthUtc(start);
   }
 
+  // For 3-month loans, the interest period ends exactly 3 months after the period start.
+  // (Do not use quarter boundary dates.)
+  if (cycleMonths === 3) {
+    return addMonthsClampedUtc(start, 3);
+  }
+
   const year = start.getUTCFullYear();
-  const candidates =
-    cycleMonths === 3 ? quarterCycleCandidatesUtc(year) : halfYearCycleCandidatesUtc(year);
+  const candidates = halfYearCycleCandidatesUtc(year);
 
   for (const c of candidates) {
     if (c.getTime() >= start.getTime()) return c;
