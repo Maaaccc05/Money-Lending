@@ -33,48 +33,24 @@ export const endOfMonthUtc = (date) => {
   return new Date(Date.UTC(y, m + 1, 0));
 };
 
-const quarterCycleCandidatesUtc = (year) => [
-  new Date(Date.UTC(year, 2, 31)),  // Mar 31
-  new Date(Date.UTC(year, 5, 30)),  // Jun 30
-  new Date(Date.UTC(year, 8, 30)),  // Sep 30
-  new Date(Date.UTC(year, 11, 31)), // Dec 31
-];
-
 const halfYearCycleCandidatesUtc = (year) => [
   new Date(Date.UTC(year, 2, 31)), // Mar 31
   new Date(Date.UTC(year, 8, 30)), // Sep 30
 ];
-
-const addMonthsClampedUtc = (date, months) => {
-  const d = toUtcStartOfDay(date);
-  if (!d) return null;
-
-  const y = d.getUTCFullYear();
-  const m = d.getUTCMonth();
-  const day = d.getUTCDate();
-
-  // Compute target year/month via UTC date rollover, then clamp day-of-month.
-  const firstOfTargetMonth = new Date(Date.UTC(y, m + months, 1));
-  const targetYear = firstOfTargetMonth.getUTCFullYear();
-  const targetMonth = firstOfTargetMonth.getUTCMonth();
-  const lastDayOfTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
-  const clampedDay = Math.min(day, lastDayOfTargetMonth);
-
-  return new Date(Date.UTC(targetYear, targetMonth, clampedDay));
-};
 
 export const getNextCycleEndDateUtc = (periodStart, cycleMonths) => {
   const start = toUtcStartOfDay(periodStart);
   if (!start) return null;
 
   if (cycleMonths === 1) {
-    return endOfMonthUtc(start);
+    // Fixed-day cycle: 30 days total, inclusive of start and end.
+    // (We subtract 1 because diffDaysInclusiveUtc counts both endpoints.)
+    return addDaysUtc(start, 29);
   }
 
-  // For 3-month loans, the interest period ends exactly 3 months after the period start.
-  // (Do not use quarter boundary dates.)
   if (cycleMonths === 3) {
-    return addMonthsClampedUtc(start, 3);
+    // Fixed-day cycle: 90 days total, inclusive of start and end.
+    return addDaysUtc(start, 89);
   }
 
   const year = start.getUTCFullYear();

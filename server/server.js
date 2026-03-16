@@ -9,6 +9,7 @@ import lenderRoutes from './routes/lenderRoutes.js';
 import loanRoutes from './routes/loanRoutes.js';
 import interestRoutes from './routes/interestRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
+import { startInterestCronJob } from './jobs/interestCron.js';
 
 // Load environment variables
 dotenv.config();
@@ -16,8 +17,11 @@ dotenv.config();
 // Initialize Express app
 const app = express();
 
-// Connect to MongoDB
-connectDB();
+// Connect to MongoDB (and start background jobs) before listening.
+await connectDB();
+
+// Daily background interest generation
+startInterestCronJob();
 
 // Security middleware
 app.use(helmet());

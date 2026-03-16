@@ -22,6 +22,9 @@ router.post(
 
 router.get('/pending', interestController.getPendingInterest);
 
+// Paginated list of interest records
+router.get('/', interestController.getAllInterestRecords);
+
 router.post(
   '/record-payment',
   [

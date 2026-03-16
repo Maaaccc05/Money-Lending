@@ -72,6 +72,7 @@ export const loanAPI = {
 // Interest endpoints
 export const interestAPI = {
   generate: (loanId, endDate) => api.post(`/interest/generate/${loanId}`, { endDate }),
+  list: (page = 1, limit = 10) => api.get('/interest', { params: { page, limit } }),
   getPending: (page = 1, limit = 10) => api.get('/interest/pending', { params: { page, limit } }),
   recordPayment: (data) => api.post('/interest/record-payment', data),
   getPayments: (page = 1, limit = 10) => api.get('/interest/payments', { params: { page, limit } }),

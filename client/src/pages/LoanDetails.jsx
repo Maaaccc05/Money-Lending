@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Sidebar, Navbar } from '../components/index';
-import { loanAPI, lenderAPI, interestAPI } from '../services/api';
+import { loanAPI, lenderAPI } from '../services/api';
 import {
   ArrowLeft, User, Building, Landmark, Calendar, FileText,
   IndianRupee, PieChart, Users, AlertCircle, Plus, CheckCircle, X
@@ -36,10 +36,37 @@ export const LoanDetails = () => {
   const [addSuccess, setAddSuccess] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
-  // Generate interest state
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generateSuccess, setGenerateSuccess] = useState('');
-  const [generateError, setGenerateError] = useState('');
+  // Live interest (calculated on demand, not stored)
+  const [showLiveInterest, setShowLiveInterest] = useState(false);
+  const [liveInterest, setLiveInterest] = useState(null);
+
+  const toUtcStartOfDay = (value) => {
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  };
+
+  const diffDaysInclusiveUtc = (startDate, endDate) => {
+    const start = toUtcStartOfDay(startDate);
+    const end = toUtcStartOfDay(endDate);
+    if (!start || !end) return null;
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+    const diff = Math.round((end.getTime() - start.getTime()) / MS_PER_DAY);
+    return diff + 1;
+  };
+
+  const calculateSimpleInterestDailyLive = ({ principal, annualRatePct, periodStart, periodEnd }) => {
+    const days = diffDaysInclusiveUtc(periodStart, periodEnd);
+    if (days == null || days <= 0) {
+      return { interestAmount: 0, days: days ?? 0 };
+    }
+    const rateDecimal = (Number(annualRatePct) || 0) / 100;
+    const interest = (Number(principal) || 0) * rateDecimal * (days / 365);
+    return {
+      interestAmount: Math.round(interest * 100) / 100,
+      days,
+    };
+  };
 
   const fetchLoanData = async () => {
     setIsLoading(true);
@@ -56,6 +83,12 @@ export const LoanDetails = () => {
 
   useEffect(() => {
     fetchLoanData();
+  }, [loanId]);
+
+  // Reset panel when navigating away or switching loans
+  useEffect(() => {
+    setShowLiveInterest(false);
+    setLiveInterest(null);
   }, [loanId]);
 
   // ----- Lender search for add-lender form -----
@@ -109,29 +142,61 @@ export const LoanDetails = () => {
     }
   };
 
-  const handleGenerateInterest = async () => {
-    setGenerateError('');
-    setGenerateSuccess('');
-    setIsGenerating(true);
-    try {
-      // Calculate up to today by default
-      const { data: res } = await interestAPI.generate(data.loan._id, new Date().toISOString());
-      if (res?.message) {
-        const count = res.records?.length ?? 0;
-        setGenerateSuccess(count > 0 ? `${res.message} (${count} record(s))` : res.message);
-      } else {
-        setGenerateSuccess(`${res.records?.length || 0} interest record(s) generated!`);
-      }
-      // Refresh the records
-      await fetchLoanData();
-      
-      // Auto dismiss success message after 5 seconds
-      setTimeout(() => setGenerateSuccess(''), 5000);
-    } catch (err) {
-      setGenerateError(err.response?.data?.message || 'Failed to generate interest');
-    } finally {
-      setIsGenerating(false);
+  const handleShowInterest = () => {
+    if (showLiveInterest) {
+      setShowLiveInterest(false);
+      setLiveInterest(null);
+      return;
     }
+
+    const loan = data?.loan;
+    if (!loan) return;
+
+    const today = new Date();
+
+    const borrowerName = loan?.borrowerId
+      ? `${loan.borrowerId.name || ''} ${loan.borrowerId.surname || ''}`.trim()
+      : '';
+
+    const borrowerCalc = calculateSimpleInterestDailyLive({
+      principal: loan.totalLoanAmount,
+      annualRatePct: loan.interestRateAnnual,
+      periodStart: loan.disbursementDate,
+      periodEnd: today,
+    });
+
+    const lenders = Array.isArray(loan.lenders) ? loan.lenders : [];
+    const lenderRows = lenders.map((l) => {
+      const lenderName = l?.lenderId
+        ? `${l.lenderId.name || ''} ${l.lenderId.surname || ''}`.trim()
+        : '';
+      const start = l?.moneyReceivedDate || l?.interestStartDate;
+      const calc = calculateSimpleInterestDailyLive({
+        principal: l?.amountContributed,
+        annualRatePct: l?.lenderInterestRate,
+        periodStart: start,
+        periodEnd: today,
+      });
+      return {
+        key: `${l?.lenderId?._id || lenderName || 'lender'}-${String(start || '')}`,
+        lenderName,
+        startDate: start,
+        endDate: today,
+        interestAmount: calc.interestAmount,
+      };
+    });
+
+    setLiveInterest({
+      asOf: today,
+      borrower: {
+        borrowerName,
+        startDate: loan.disbursementDate,
+        endDate: today,
+        interestAmount: borrowerCalc.interestAmount,
+      },
+      lenders: lenderRows,
+    });
+    setShowLiveInterest(true);
   };
 
   // ----- Loading / Error states -----
@@ -174,15 +239,8 @@ export const LoanDetails = () => {
     );
   }
 
-  const { loan, interestRecords } = data;
+  const { loan } = data;
   const borrower = loan.borrowerId;
-
-  const borrowerInterestRecords = (interestRecords || []).filter(
-    (r) => !r?.lenderName && Number(r?.lenderInterest || 0) === 0
-  );
-  const lenderInterestRecords = (interestRecords || []).filter(
-    (r) => Boolean(r?.lenderName) || Number(r?.lenderInterest || 0) > 0
-  );
 
   const fundedAmount  = loan.fundedAmount  ?? loan.lenders.reduce((s, l) => s + l.amountContributed, 0);
   const remainingAmount = loan.remainingAmount ?? Math.max(0, loan.totalLoanAmount - fundedAmount);
@@ -475,151 +533,79 @@ export const LoanDetails = () => {
 
               </div>
 
-              {/* ── Right Column (Interest History) ── */}
+              {/* ── Right Column (Show Interest) ── */}
               <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 md:p-6 lg:min-h-[560px] sticky top-24">
                   <div className="flex items-center justify-between mb-4 pb-3 border-b">
                     <h2 className="text-lg font-bold flex items-center gap-2 text-gray-800">
-                      <Landmark size={20} className="text-green-600" /> Interest History
+                      <Landmark size={20} className="text-green-600" /> Interest
                     </h2>
-                    {loan.status !== 'CLOSED' && loan.status !== 'PENDING' && (
-                      <button
-                        onClick={handleGenerateInterest}
-                        disabled={isGenerating}
-                        className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
-                      >
-                        {isGenerating ? 'Generating...' : 'Generate Now'}
-                      </button>
-                    )}
+                    <button
+                      onClick={handleShowInterest}
+                      className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {showLiveInterest ? 'Hide Interest' : 'Show Interest'}
+                    </button>
                   </div>
 
-                  {generateError && (
-                    <div className="mb-3 p-2 bg-red-50 text-red-600 border border-red-100 rounded text-xs">
-                      {generateError}
-                    </div>
-                  )}
-                  {generateSuccess && (
-                    <div className="mb-3 p-2 bg-green-50 text-green-700 border border-green-100 rounded text-xs flex items-center gap-1">
-                      <CheckCircle size={14} /> {generateSuccess}
-                    </div>
-                  )}
-
-                  {interestRecords && interestRecords.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Borrower partition */}
-                      <div className="p-4 border rounded-xl bg-gray-50/50">
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <p className="text-xs text-gray-500 font-semibold">Borrower Interest</p>
-                            <p className="text-[11px] text-gray-500 mt-0.5 truncate" title={`${borrower?.name || ''} ${borrower?.surname || ''}`.trim()}>
-                              {borrower?.name ? (
-                                <>
-                                  Borrower: <span className="text-gray-700 font-medium">{borrower?.name} {borrower?.surname}</span>
-                                </>
-                              ) : (
-                                <>Borrower: <span className="text-gray-700 font-medium">-</span></>
-                              )}
-                            </p>
-                          </div>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md border bg-orange-50 text-orange-700 border-orange-200">
-                            {borrowerInterestRecords.length}
-                          </span>
-                        </div>
-
-                        <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
-                          {borrowerInterestRecords.length > 0 ? (
-                            borrowerInterestRecords.map((record) => (
-                              <div key={record._id} className="p-2 border rounded-lg bg-white">
-                                <div className="flex items-start justify-between">
-                                  <div>
-                                    <p className="text-[11px] text-gray-500 font-medium">Period</p>
-                                    <p className="text-xs font-semibold text-gray-800 tabular-nums">
-                                      {new Date(record.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                                      <span className="text-gray-400 mx-1">→</span>
-                                      {new Date(record.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                                    </p>
-                                  </div>
-                                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${
-                                    record.status === 'paid'
-                                      ? 'bg-green-50 text-green-700 border-green-200'
-                                      : 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                                  }`}>
-                                    {record.status}
-                                  </span>
-                                </div>
-
-                                <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
-                                  <span className="text-xs text-gray-500">Interest</span>
-                                  <span className="font-bold text-orange-600 text-sm">
-                                    ₹{Number(record.borrowerInterest || 0).toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-xs text-gray-500">No borrower interest records.</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Lender partition */}
-                      <div className="p-4 border rounded-xl bg-gray-50/50">
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <p className="text-xs text-gray-500 font-semibold">Lender Interest</p>
-                            <p className="text-[11px] text-gray-500 mt-0.5">(Per lender)</p>
-                          </div>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md border bg-green-50 text-green-700 border-green-200">
-                            {lenderInterestRecords.length}
-                          </span>
-                        </div>
-
-                        <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
-                          {lenderInterestRecords.length > 0 ? (
-                            lenderInterestRecords.map((record) => (
-                              <div key={record._id} className="p-2 border rounded-lg bg-white">
-                                <div className="flex items-start justify-between">
-                                  <div className="min-w-0">
-                                    <p className="text-[11px] text-gray-500 font-medium truncate" title={record.lenderName}>
-                                      Lender: <span className="text-gray-700 font-semibold">{record.lenderName || '-'}</span>
-                                    </p>
-                                    <p className="text-[11px] text-gray-500 font-medium">Period</p>
-                                    <p className="text-xs font-semibold text-gray-800 tabular-nums">
-                                      {new Date(record.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                                      <span className="text-gray-400 mx-1">→</span>
-                                      {new Date(record.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                                    </p>
-                                  </div>
-                                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${
-                                    record.status === 'paid'
-                                      ? 'bg-green-50 text-green-700 border-green-200'
-                                      : 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                                  }`}>
-                                    {record.status}
-                                  </span>
-                                </div>
-
-                                <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
-                                  <span className="text-xs text-gray-500">Interest</span>
-                                  <span className="font-bold text-green-600 text-sm">
-                                    ₹{Number(record.lenderInterest || 0).toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-xs text-gray-500">No lender interest records.</p>
-                          )}
-                        </div>
-                      </div>
+                  {!showLiveInterest ? (
+                    <div className="text-center py-10 text-gray-600 bg-gray-50 rounded-xl border border-gray-100">
+                      <p className="text-sm font-medium">Interest not shown</p>
+                      <p className="text-xs text-gray-500 mt-1">Click “Show Interest” to calculate totals till today.</p>
                     </div>
                   ) : (
-                    <div className="text-center py-8">
-                      <div className="bg-gray-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <Landmark size={20} className="text-gray-400"/>
+                    <div className="space-y-4">
+                      {/* Borrower Interest */}
+                      <div className="p-4 border rounded-xl bg-gray-50/50">
+                        <p className="text-xs text-gray-500 font-semibold mb-2">Borrower Interest</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-gray-800 truncate" title={`${borrower?.name || ''} ${borrower?.surname || ''}`.trim()}>
+                              {borrower?.name ? `${borrower?.name} ${borrower?.surname}` : '-'}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-1 tabular-nums">
+                              {loan.disbursementDate ? new Date(loan.disbursementDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                              <span className="text-gray-400 mx-1">→</span>
+                              {liveInterest?.asOf ? new Date(liveInterest.asOf).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today'}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-[11px] text-gray-500">Total Interest till today</p>
+                            <p className="text-lg font-bold text-orange-600">₹{Number(liveInterest?.borrower?.interestAmount || 0).toLocaleString('en-IN')}</p>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-sm text-gray-500 font-medium">No interest records yet.</p>
-                      <p className="text-xs text-gray-400 mt-1">Records appear after interest is generated.</p>
+
+                      {/* Lender Interest */}
+                      <div className="p-4 border rounded-xl bg-gray-50/50">
+                        <p className="text-xs text-gray-500 font-semibold mb-2">Lender Interest</p>
+                        <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                          {liveInterest?.lenders?.length ? (
+                            liveInterest.lenders.map((l) => (
+                              <div key={l.key} className="p-3 border rounded-lg bg-white">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-bold text-gray-800 truncate" title={l.lenderName || ''}>
+                                      {l.lenderName || 'Lender'}
+                                    </p>
+                                    <p className="text-xs text-gray-600 mt-1 tabular-nums">
+                                      {l.startDate ? new Date(l.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                                      <span className="text-gray-400 mx-1">→</span>
+                                      {liveInterest?.asOf ? new Date(liveInterest.asOf).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today'}
+                                    </p>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <p className="text-[11px] text-gray-500">Total Interest till today</p>
+                                    <p className="text-base font-bold text-blue-600">₹{Number(l.interestAmount || 0).toLocaleString('en-IN')}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-gray-500">No lenders found.</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

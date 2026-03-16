@@ -3,6 +3,7 @@ import Borrower from '../models/Borrower.js';
 import Lender from '../models/Lender.js';
 import InterestRecord from '../models/InterestRecord.js';
 import { calculateSimpleInterestDaily } from '../services/interestCalculator.js';
+import { generateDueInterestForLoan } from '../services/interestAutoGenerator.js';
 
 const fullName = (person) => {
   if (!person) return '';
@@ -111,6 +112,11 @@ export const createLoan = async (req, res) => {
     });
 
     await loan.save();
+
+    // Catch-up generation for loans created with past disbursement dates.
+    // Fire-and-forget so loan creation stays responsive.
+    generateDueInterestForLoan({ loan: loan.toObject(), asOf: new Date() })
+      .catch((err) => console.error('[createLoan] auto interest generation failed:', err));
 
     res.status(201).json({
       message: 'Loan created successfully',

@@ -46,6 +46,84 @@ const toInterestView = ({ record, loan }) => {
   };
 };
 
+const safeToInterestView = (record) => {
+  const startDate = record?.periodStart || record?.startDate || null;
+  const endDate = record?.periodEnd || record?.endDate || null;
+  const days = record?.days ?? record?.daysCount ?? null;
+  const principal = record?.principal ?? record?.principalAmount ?? 0;
+  const isBorrowerRecord = !record?.lenderId;
+
+  return {
+    _id: record?._id,
+    loanId: record?.loanId?.loanId || record?.loanId?.toString?.() || '',
+    borrowerName: record?.loanId?.borrowerId ? fullName(record.loanId.borrowerId) : '',
+    lenderName: isBorrowerRecord ? '' : fullName(record?.lenderId),
+    principal,
+    borrowerInterest: isBorrowerRecord ? (record?.interestAmount ?? 0) : 0,
+    lenderInterest: isBorrowerRecord ? 0 : (record?.interestAmount ?? 0),
+    rate: isBorrowerRecord
+      ? (record?.borrowerRate ?? record?.interestRate ?? 0)
+      : (record?.lenderRate ?? record?.interestRate ?? 0),
+    days,
+    startDate,
+    endDate,
+    status: record?.status,
+    interestAmount: record?.interestAmount,
+  };
+};
+
+export const getAllInterestRecords = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const [records, total] = await Promise.all([
+      InterestRecord.find()
+        .populate({
+          path: 'loanId',
+          select: 'loanId totalLoanAmount interestRateAnnual borrowerId',
+          populate: { path: 'borrowerId', select: 'name surname' },
+        })
+        .populate('lenderId', 'name surname familyGroup')
+        .sort({ periodEnd: -1, endDate: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      InterestRecord.countDocuments(),
+    ]);
+
+    const views = records.map((r) => {
+      const loan = r?.loanId && typeof r.loanId === 'object' && r.loanId._id ? r.loanId : null;
+      if (!loan) return safeToInterestView(r);
+
+      try {
+        return toInterestView({ record: r, loan });
+      } catch (e) {
+        // Never crash the endpoint due to unexpected/missing fields.
+        return safeToInterestView(r);
+      }
+    });
+
+    res.status(200).json({
+      data: views,
+      page,
+      limit,
+      total,
+      // Backward-compatible shape
+      records: views,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Interest fetch error:', error);
+    res.status(500).json({ message: 'Failed to fetch interest records' });
+  }
+};
+
 export const generateInterest = async (req, res) => {
   try {
     const { loanId } = req.params;
@@ -266,8 +344,18 @@ export const getPendingInterest = async (req, res) => {
 
     const total = await InterestRecord.countDocuments({ status: 'pending', lenderId: { $ne: null } });
 
+    const views = records.map((r) => {
+      const loan = r?.loanId && typeof r.loanId === 'object' && r.loanId._id ? r.loanId : null;
+      if (!loan) return safeToInterestView(r);
+      try {
+        return toInterestView({ record: r, loan });
+      } catch (_) {
+        return safeToInterestView(r);
+      }
+    });
+
     res.status(200).json({
-      records: records.map((r) => toInterestView({ record: r, loan: r.loanId })),
+      records: views,
       pagination: {
         total,
         page,
@@ -377,6 +465,7 @@ export const getInterestRecordsByLoan = async (req, res) => {
 
 export default {
   generateInterest,
+  getAllInterestRecords,
   getPendingInterest,
   recordInterestPayment,
   getInterestPayments,
