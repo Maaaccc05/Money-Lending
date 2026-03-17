@@ -5,7 +5,6 @@ import { TrendingUp, Users, Landmark, DollarSign, AlertCircle } from 'lucide-rea
 
 export const Dashboard = () => {
   const [stats, setStats] = useState(null);
-  const [monthlyData, setMonthlyData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -17,7 +16,6 @@ export const Dashboard = () => {
     try {
       const { data } = await reportAPI.getDashboardStats();
       setStats(data.stats);
-      setMonthlyData(data.monthlyCollection);
     } catch (err) {
       setError('Failed to load dashboard data');
       console.error(err);
@@ -135,31 +133,6 @@ export const Dashboard = () => {
                   </div>
                 </div>
               </div>
-
-              {/* Monthly Collection Chart */}
-              {monthlyData && monthlyData.length > 0 && (
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h2 className="text-xl font-bold text-gray-800 mb-4">Monthly Interest Collection</h2>
-                  <div className="flex items-end gap-2 h-40">
-                    {monthlyData.map((entry, idx) => {
-                      const maxAmount = Math.max(...monthlyData.map((d) => d.amount || 0));
-                      const height = (entry.amount / maxAmount) * 100;
-                      return (
-                        <div key={idx} className="flex-1 flex flex-col items-center">
-                          <div
-                            className="bg-blue-600 rounded-t w-full"
-                            style={{ height: `${height}%` }}
-                          ></div>
-                          <p className="text-xs text-gray-600 mt-2">{entry._id}</p>
-                          <p className="text-xs font-semibold">
-                            ₹{(entry.amount / 1000).toFixed(0)}K
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </>
           ) : null}
         </div>

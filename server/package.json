@@ -21,7 +21,8 @@
     "node-cron": "^3.0.3",
     "express-validator": "^7.0.0",
     "dayjs": "^1.11.9",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "puppeteer": "^24.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

@@ -1,10 +1,12 @@
 import InterestRecord from '../models/InterestRecord.js';
 import InterestPayment from '../models/InterestPayment.js';
 import Loan from '../models/Loan.js';
+import path from 'path';
 import {
   calculateSimpleInterestDaily,
   getNextInterestPeriodUtc,
 } from '../services/interestCalculator.js';
+import { renderReceiptHtml, generateReceiptPdf } from '../services/receiptService.js';
 
 const fullName = (person) => {
   if (!person) return '';
@@ -43,6 +45,14 @@ const toInterestView = ({ record, loan }) => {
     status: record.status,
     // keep for backward-compat consumers
     interestAmount: record.interestAmount,
+
+    // Payment + TDS + Receipt
+    tdsPercent: record.tdsPercent ?? 10,
+    tdsAmount: record.tdsAmount ?? null,
+    amountReceived: record.amountReceived ?? null,
+    balanceAmount: record.balanceAmount ?? null,
+    paymentDate: record.paymentDate ?? null,
+    receiptPdfUrl: record.receiptPdfUrl ?? null,
   };
 };
 
@@ -69,6 +79,33 @@ const safeToInterestView = (record) => {
     endDate,
     status: record?.status,
     interestAmount: record?.interestAmount,
+
+    // Payment + TDS + Receipt
+    tdsPercent: record?.tdsPercent ?? 10,
+    tdsAmount: record?.tdsAmount ?? null,
+    amountReceived: record?.amountReceived ?? null,
+    balanceAmount: record?.balanceAmount ?? null,
+    paymentDate: record?.paymentDate ?? null,
+    receiptPdfUrl: record?.receiptPdfUrl ?? null,
+  };
+};
+
+const buildReceiptData = ({ loan, lender, record }) => {
+  const startDate = record.periodStart || record.startDate;
+  const endDate = record.periodEnd || record.endDate;
+
+  return {
+    loanPublicId: loan?.loanId || '',
+    borrowerName: fullName(loan?.borrowerId),
+    lenderName: fullName(lender),
+    periodStart: startDate,
+    periodEnd: endDate,
+    interestAmount: record.interestAmount,
+    tdsPercent: record.tdsPercent ?? 10,
+    tdsAmount: record.tdsAmount ?? null,
+    amountReceived: record.amountReceived ?? null,
+    balanceAmount: record.balanceAmount ?? null,
+    receiptDate: record.paymentDate || new Date(),
   };
 };
 
@@ -369,7 +406,7 @@ export const getPendingInterest = async (req, res) => {
 
 export const recordInterestPayment = async (req, res) => {
   try {
-    const { interestRecordId, amountPaid, paymentDate } = req.body;
+    const { interestRecordId, amountReceived, amountPaid, paymentDate } = req.body;
 
     const interestRecord = await InterestRecord.findById(interestRecordId);
     if (!interestRecord) {
@@ -380,28 +417,81 @@ export const recordInterestPayment = async (req, res) => {
       return res.status(400).json({ message: 'This interest record is not linked to a lender and cannot be marked paid here.' });
     }
 
-    if (amountPaid > interestRecord.interestAmount) {
+    if (interestRecord.status === 'paid') {
+      return res.status(400).json({ message: 'This interest record is already marked as paid.' });
+    }
+
+    const received = Number(amountReceived ?? amountPaid);
+    if (Number.isNaN(received) || received < 0) {
+      return res.status(400).json({ message: 'amountReceived must be a non-negative number' });
+    }
+
+    if (received > interestRecord.interestAmount) {
       return res.status(400).json({
-        message: `Amount paid (₹${amountPaid}) exceeds interest amount (₹${interestRecord.interestAmount})`,
+        message: `Amount received (₹${received}) exceeds interest amount (₹${interestRecord.interestAmount})`,
       });
     }
 
-    // Create payment record
+    const computedTdsAmount = Math.round((interestRecord.interestAmount - received) * 100) / 100;
+    const computedTdsPercent = interestRecord.interestAmount > 0
+      ? Math.round(((computedTdsAmount / interestRecord.interestAmount) * 100) * 100) / 100
+      : 0;
+
+    const paidOn = paymentDate ? new Date(paymentDate) : new Date();
+    if (Number.isNaN(paidOn.getTime())) {
+      return res.status(400).json({ message: 'Invalid paymentDate' });
+    }
+
+    // Update the interest record payment breakdown (TDS is the "balance")
+    interestRecord.amountReceived = received;
+    interestRecord.tdsAmount = computedTdsAmount;
+    interestRecord.balanceAmount = computedTdsAmount;
+    interestRecord.tdsPercent = computedTdsPercent;
+    interestRecord.paymentDate = paidOn;
+    interestRecord.status = 'paid';
+
+    // Generate PDF receipt
+    const populated = await InterestRecord.findById(interestRecordId)
+      .populate({
+        path: 'loanId',
+        select: 'loanId borrowerId',
+        populate: { path: 'borrowerId', select: 'name surname' },
+      })
+      .populate('lenderId', 'name surname');
+
+    const receiptHtml = renderReceiptHtml(
+      buildReceiptData({
+        loan: populated?.loanId,
+        lender: populated?.lenderId,
+        record: interestRecord,
+      })
+    );
+
+    const { publicUrl } = await generateReceiptPdf({
+      outputDir: path.resolve(process.cwd(), 'receipts'),
+      publicBaseUrlPath: '/receipts',
+      html: receiptHtml,
+      fileNameBase: `interest-${interestRecordId}`,
+    });
+
+    interestRecord.receiptPdfUrl = publicUrl;
+    await interestRecord.save();
+
+    // Create payment record (keep legacy amountPaid for backward compatibility)
     const payment = new InterestPayment({
       loanId: interestRecord.loanId,
       lenderId: interestRecord.lenderId,
       interestRecordId,
-      amountPaid,
-      paymentDate: paymentDate || new Date(),
+      amountPaid: received,
+      amountReceived: received,
+      tdsPercent: computedTdsPercent,
+      tdsAmount: computedTdsAmount,
+      balanceAmount: computedTdsAmount,
+      receiptPdfUrl: publicUrl,
+      paymentDate: paidOn,
     });
 
     await payment.save();
-
-    // If full amount paid, mark interest record as paid
-    if (amountPaid === interestRecord.interestAmount) {
-      interestRecord.status = 'paid';
-      await interestRecord.save();
-    }
 
     res.status(201).json({
       message: 'Interest payment recorded successfully',
@@ -409,6 +499,50 @@ export const recordInterestPayment = async (req, res) => {
     });
   } catch (error) {
     console.error('Record interest payment error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getInterestReceipt = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const record = await InterestRecord.findById(id)
+      .populate({
+        path: 'loanId',
+        select: 'loanId borrowerId',
+        populate: { path: 'borrowerId', select: 'name surname' },
+      })
+      .populate('lenderId', 'name surname');
+
+    if (!record) return res.status(404).json({ message: 'Interest record not found' });
+    if (!record.lenderId) return res.status(400).json({ message: 'No lender receipt for borrower-level interest record.' });
+
+    if (record.receiptPdfUrl) {
+      return res.status(200).json({ receiptPdfUrl: record.receiptPdfUrl, record: safeToInterestView(record) });
+    }
+
+    // If missing, generate on-demand.
+    const receiptHtml = renderReceiptHtml(
+      buildReceiptData({ loan: record.loanId, lender: record.lenderId, record })
+    );
+
+    const { publicUrl } = await generateReceiptPdf({
+      outputDir: path.resolve(process.cwd(), 'receipts'),
+      publicBaseUrlPath: '/receipts',
+      html: receiptHtml,
+      fileNameBase: `interest-${record._id}`,
+    });
+
+    // Data integrity: do not mutate paid records outside of payment flow.
+    if (record.status !== 'paid') {
+      record.receiptPdfUrl = publicUrl;
+      await record.save();
+    }
+
+    return res.status(200).json({ receiptPdfUrl: publicUrl, record: safeToInterestView(record) });
+  } catch (error) {
+    console.error('Get interest receipt error:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -468,6 +602,7 @@ export default {
   getAllInterestRecords,
   getPendingInterest,
   recordInterestPayment,
+  getInterestReceipt,
   getInterestPayments,
   getInterestRecordsByLoan,
 };

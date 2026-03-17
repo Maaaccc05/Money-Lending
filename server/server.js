@@ -10,6 +10,8 @@ import loanRoutes from './routes/loanRoutes.js';
 import interestRoutes from './routes/interestRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import { startInterestCronJob } from './jobs/interestCron.js';
+import { startReceiptCronJob } from './jobs/receiptCron.js';
+import path from 'path';
 
 // Load environment variables
 dotenv.config();
@@ -22,6 +24,9 @@ await connectDB();
 
 // Daily background interest generation
 startInterestCronJob();
+
+// Daily receipt generation/backfill
+startReceiptCronJob();
 
 // Security middleware
 app.use(helmet());
@@ -59,6 +64,9 @@ app.use('/api/lenders', lenderRoutes);
 app.use('/api/loans', loanRoutes);
 app.use('/api/interest', interestRoutes);
 app.use('/api/reports', reportRoutes);
+
+// Serve generated receipt PDFs
+app.use('/receipts', express.static(path.resolve(process.cwd(), 'receipts')));
 
 // 404 handler
 app.use((req, res) => {

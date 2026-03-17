@@ -9,6 +9,10 @@ router.use(authMiddleware);
 
 router.get('/dashboard-stats', reportController.getDashboardStats);
 
+// New required endpoints (aliases / additions)
+router.get('/dashboard', reportController.getDashboard);
+router.get('/interest-summary', reportController.getInterestSummary);
+
 router.get('/current-loans', reportController.getCurrentLoans);
 
 router.get('/loans-by-borrower', reportController.getLoansByBorrower);

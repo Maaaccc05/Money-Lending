@@ -104,20 +104,36 @@ export const createLoan = async (req, res) => {
     const remainingAmount = Math.max(0, parseFloat(totalLoanAmount) - fundedAmount);
     const status = computeFundingStatus(fundedAmount, parseFloat(totalLoanAmount));
 
-    const loan = new Loan({
-      borrowerId,
-      totalLoanAmount: parseFloat(totalLoanAmount),
-      fundedAmount,
-      remainingAmount,
-      disbursementDate,
-      interestRateAnnual: parseFloat(interestRateAnnual),
-      interestPeriodMonths: parseInt(interestPeriodMonths),
-      loanStatus: 'ACTIVE',
-      status,
-      lenders: validatedLenders,
-    });
+    // Generate a random 4-digit loanId (1000-9999) and retry on rare duplicate-key collisions.
+    let loan;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      loan = new Loan({
+        borrowerId,
+        totalLoanAmount: parseFloat(totalLoanAmount),
+        fundedAmount,
+        remainingAmount,
+        disbursementDate,
+        interestRateAnnual: parseFloat(interestRateAnnual),
+        interestPeriodMonths: parseInt(interestPeriodMonths),
+        loanStatus: 'ACTIVE',
+        status,
+        lenders: validatedLenders,
+      });
 
-    await loan.save();
+      // Assign before saving (per spec)
+      // eslint-disable-next-line no-await-in-loop
+      loan.loanId = await Loan.generateLoanId();
+
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await loan.save();
+        break;
+      } catch (err) {
+        const isDupLoanId = err?.code === 11000 && (err?.keyPattern?.loanId || String(err?.message || '').includes('loanId'));
+        if (isDupLoanId && attempt < 9) continue;
+        throw err;
+      }
+    }
 
     // Catch-up generation for loans created with past disbursement dates.
     // Fire-and-forget so loan creation stays responsive.

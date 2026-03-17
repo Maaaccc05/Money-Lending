@@ -1,11 +1,22 @@
 import mongoose from 'mongoose';
 
+const isFourDigitNumericLoanId = (v) => /^\d{4}$/.test(String(v || ''));
+
 const loanSchema = new mongoose.Schema(
   {
     loanId: {
       type: String,
       unique: true,
       index: true,
+      required: true,
+      validate: {
+        validator: function (value) {
+          // Do not break legacy loans on edit; enforce only for new docs or explicit loanId changes.
+          if (!this.isNew && !this.isModified('loanId')) return true;
+          return isFourDigitNumericLoanId(value);
+        },
+        message: 'loanId must be a random unique 4-digit numeric string (1000-9999)',
+      },
     },
     borrowerId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -82,13 +93,38 @@ const loanSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-generate loanId before saving
-loanSchema.pre('save', async function (next) {
-  if (!this.loanId) {
-    const count = await mongoose.model('Loan').countDocuments();
-    this.loanId = `LOAN-${Date.now()}-${count + 1}`;
+// Random 4-digit unique loanId generator (1000-9999).
+// Uniqueness is checked against the DB; the unique index still enforces it under concurrency.
+loanSchema.statics.generateLoanId = async function generateLoanId() {
+  let newId;
+  let exists = true;
+
+  // If the 4-digit ID space is exhausted, fail fast.
+  const count4Digit = await this.countDocuments({ loanId: /^\d{4}$/ });
+  if (count4Digit >= 9000) {
+    throw new Error('No available 4-digit loanId left (range 1000-9999 is exhausted)');
   }
-  next();
+
+  while (exists) {
+    newId = Math.floor(1000 + Math.random() * 9000).toString(); // 1000–9999
+    // eslint-disable-next-line no-await-in-loop
+    const existingLoan = await this.findOne({ loanId: newId }).select('_id').lean();
+    exists = !!existingLoan;
+  }
+
+  return newId;
+};
+
+// Ensure new loans always get a loanId before validation.
+loanSchema.pre('validate', async function (next) {
+  try {
+    if (this.isNew && !this.loanId) {
+      this.loanId = await this.constructor.generateLoanId();
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default mongoose.model('Loan', loanSchema);

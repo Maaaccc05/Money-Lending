@@ -49,6 +49,40 @@ const interestRecordSchema = new mongoose.Schema(
       min: [0, 'Interest must be positive'],
     },
 
+    // --- Payment + TDS + Receipt fields ---
+    // NOTE: These fields do NOT affect interest calculation; they only track settlement.
+    tdsPercent: {
+      type: Number,
+      default: 10,
+      min: [0, 'TDS percent must be non-negative'],
+      max: [100, 'TDS percent cannot exceed 100'],
+    },
+    tdsAmount: {
+      type: Number,
+      default: null,
+      min: [0, 'TDS amount must be non-negative'],
+    },
+    amountReceived: {
+      type: Number,
+      default: null,
+      min: [0, 'Amount received must be non-negative'],
+    },
+    balanceAmount: {
+      // Represents TDS balance (tax deduction), not pending interest.
+      type: Number,
+      default: null,
+      min: [0, 'Balance amount must be non-negative'],
+    },
+    paymentDate: {
+      type: Date,
+      default: null,
+    },
+    receiptPdfUrl: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
     // --- Legacy fields (kept for existing UI/backward compatibility) ---
     // New record generation will also populate these.
     principalAmount: {

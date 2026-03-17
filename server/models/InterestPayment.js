@@ -22,6 +22,34 @@ const interestPaymentSchema = new mongoose.Schema(
       required: [true, 'Please provide paid amount'],
       min: [0, 'Amount must be positive'],
     },
+
+    // New: explicit payment breakdown for TDS receipts.
+    amountReceived: {
+      type: Number,
+      default: null,
+      min: [0, 'Amount received must be non-negative'],
+    },
+    tdsPercent: {
+      type: Number,
+      default: 10,
+      min: [0, 'TDS percent must be non-negative'],
+      max: [100, 'TDS percent cannot exceed 100'],
+    },
+    tdsAmount: {
+      type: Number,
+      default: null,
+      min: [0, 'TDS amount must be non-negative'],
+    },
+    balanceAmount: {
+      type: Number,
+      default: null,
+      min: [0, 'Balance amount must be non-negative'],
+    },
+    receiptPdfUrl: {
+      type: String,
+      default: null,
+      trim: true,
+    },
     paymentDate: {
       type: Date,
       required: [true, 'Please provide payment date'],

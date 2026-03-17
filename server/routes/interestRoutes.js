@@ -29,14 +29,21 @@ router.post(
   '/record-payment',
   [
     body('interestRecordId').isMongoId().withMessage('Invalid interest record ID'),
-    body('amountPaid')
-      .isNumeric()
-      .withMessage('Valid amount is required')
-      .toFloat(),
+    // Preferred: amountReceived. Backward compatible: amountPaid.
+    body('amountReceived').optional().isNumeric().withMessage('Valid amountReceived is required').toFloat(),
+    body('amountPaid').optional().isNumeric().withMessage('Valid amountPaid is required').toFloat(),
     body('paymentDate').optional().isISO8601(),
   ],
   handleValidationErrors,
   interestController.recordInterestPayment
+);
+
+// Fetch/generate receipt for a specific interest record
+router.get(
+  '/receipt/:id',
+  [param('id').isMongoId().withMessage('Invalid interest record ID')],
+  handleValidationErrors,
+  interestController.getInterestReceipt
 );
 
 router.get('/payments', interestController.getInterestPayments);
