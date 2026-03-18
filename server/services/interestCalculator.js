@@ -81,6 +81,7 @@ export const calculateSimpleInterestDaily = ({ principal, annualRatePct, periodS
   };
 };
 
+
 export const getNextInterestPeriodUtc = ({ baseStartDate, lastPeriodEnd, cycleMonths }) => {
   const base = toUtcStartOfDay(baseStartDate);
   if (!base) return null;
