@@ -7,6 +7,16 @@ const interestRecordSchema = new mongoose.Schema(
       ref: 'Loan',
       required: [true, 'Please provide loan ID'],
     },
+    borrowerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Borrower',
+      default: null,
+    },
+    totalLoanAmount: {
+      type: Number,
+      default: null,
+      min: [0, 'Total loan amount must be positive'],
+    },
     lenderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Lender',
@@ -25,7 +35,7 @@ const interestRecordSchema = new mongoose.Schema(
       min: [0, 'Borrower rate must be positive'],
     },
     lenderRate: {
-      // Annual rate (%) defined by lender contribution
+      // Deprecated: lender-level rate is no longer used; kept for backward compatibility
       type: Number,
       default: null,
       min: [0, 'Lender rate must be positive'],

@@ -40,7 +40,7 @@ export const InterestRecords = () => {
 
   useEffect(() => {
     fetchPendingInterest();
-  }, [page]);
+  }, [page, view]);
 
   useEffect(() => {
     // Switching views should start from page 1 to avoid empty pages.
@@ -51,7 +51,8 @@ export const InterestRecords = () => {
     setIsLoading(true);
     setError('');
     try {
-      const { data } = await interestAPI.getPending(page, 10);
+      const scope = view === 'borrower' ? 'borrower' : 'lender';
+      const { data } = await interestAPI.getPending(page, 10, scope);
       setInterests(data.records);
       setPagination(data.pagination);
     } catch (err) {
@@ -78,54 +79,13 @@ export const InterestRecords = () => {
     }
   };
 
-  const borrowerRows = useMemo(() => {
-    const groups = new Map();
-
-    for (const r of interests) {
-      const key = r.loanId;
-      if (!key) continue;
-      const arr = groups.get(key) || [];
-      arr.push(r);
-      groups.set(key, arr);
-    }
-
-    const rows = [];
-    for (const [loanId, records] of groups.entries()) {
-      const borrowerRecords = records.filter((r) => !r.lenderName);
-      const pickLatest = (arr) =>
-        arr
-          .slice()
-          .sort((a, b) => {
-            const at = a?.endDate ? new Date(a.endDate).getTime() : 0;
-            const bt = b?.endDate ? new Date(b.endDate).getTime() : 0;
-            return at - bt;
-          })
-          .at(-1);
-
-      const picked = pickLatest(borrowerRecords.length ? borrowerRecords : records);
-      if (!picked) continue;
-
-      rows.push({
-        _id: picked._id,
-        loanId,
-        borrowerName: picked.borrowerName,
-        totalLoanAmount: borrowerRecords.length ? picked.principal : null,
-        borrowerInterest: picked.borrowerInterest,
-        days: picked.days,
-        endDate: picked.endDate,
-        status: picked.status,
-      });
-    }
-
-    // Show latest first
-    rows.sort((a, b) => {
-      const at = a?.endDate ? new Date(a.endDate).getTime() : 0;
-      const bt = b?.endDate ? new Date(b.endDate).getTime() : 0;
-      return bt - at;
-    });
-
-    return rows;
-  }, [interests]);
+  const borrowerRows = useMemo(
+    () => interests.filter((r) => !r.lenderName).map((r) => ({
+      ...r,
+      totalLoanAmount: r.totalLoanAmount ?? r.principal,
+    })),
+    [interests]
+  );
 
   const lenderRows = useMemo(() => interests.filter((r) => r.lenderName), [interests]);
 

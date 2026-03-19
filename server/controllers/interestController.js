@@ -4,8 +4,8 @@ import Loan from '../models/Loan.js';
 import path from 'path';
 import {
   calculateSimpleInterestDaily,
-  getNextInterestPeriodUtc,
 } from '../services/interestCalculator.js';
+import { generateInterestRecords } from '../services/interestAutoGenerator.js';
 import { renderReceiptHtml, generateReceiptPdf } from '../services/receiptService.js';
 
 const fullName = (person) => {
@@ -38,7 +38,7 @@ const toInterestView = ({ record, loan }) => {
     principal: record.principal ?? record.principalAmount,
     borrowerInterest,
     lenderInterest,
-    rate: isBorrowerRecord ? loan.interestRateAnnual : (record.lenderRate ?? record.interestRate),
+    rate: loan.interestRateAnnual,
     days,
     startDate,
     endDate,
@@ -73,7 +73,7 @@ const safeToInterestView = (record) => {
     lenderInterest: isBorrowerRecord ? 0 : (record?.interestAmount ?? 0),
     rate: isBorrowerRecord
       ? (record?.borrowerRate ?? record?.interestRate ?? 0)
-      : (record?.lenderRate ?? record?.interestRate ?? 0),
+      : (record?.borrowerRate ?? record?.interestRate ?? 0),
     days,
     startDate,
     endDate,
@@ -164,8 +164,6 @@ export const getAllInterestRecords = async (req, res) => {
 export const generateInterest = async (req, res) => {
   try {
     const { loanId } = req.params;
-    // Backward compatible input: client passes an ISO string as `endDate` today.
-    // We treat it as an "as-of" date to decide whether the next cycle is due.
     const asOfDate = req.body.endDate || req.body.asOfDate || new Date().toISOString();
     const asOf = new Date(asOfDate);
     if (Number.isNaN(asOf.getTime())) {
@@ -179,178 +177,23 @@ export const generateInterest = async (req, res) => {
       return res.status(404).json({ message: 'Loan not found' });
     }
 
-    const cycleMonths = Number(loan.interestPeriodMonths);
-    if (![1, 3, 6].includes(cycleMonths)) {
-      return res.status(400).json({ message: 'Invalid loan interest cycle (interestPeriodMonths must be 1, 3, or 6)' });
-    }
+    const summary = await generateInterestRecords({
+      loan: loan.toObject(),
+      asOf,
+      replaceExisting: true,
+    });
 
-    // Find last borrower interest record (lenderId = null) to continue cycles.
-    const lastBorrowerRecord = await InterestRecord.findOne({ loanId: loan._id, lenderId: null })
-      .sort({ periodEnd: -1 })
-      .select('periodEnd')
+    const refreshed = await InterestRecord.find({ loanId: loan._id })
+      .populate('lenderId', 'name surname familyGroup')
+      .sort({ periodStart: 1, lenderId: 1 })
       .lean();
 
-    const borrowerPeriod = getNextInterestPeriodUtc({
-      baseStartDate: loan.disbursementDate,
-      lastPeriodEnd: lastBorrowerRecord?.periodEnd || null,
-      cycleMonths,
-    });
-
-    if (!borrowerPeriod) {
-      return res.status(400).json({ message: 'Unable to determine next borrower interest period' });
-    }
-
-    if (borrowerPeriod.periodEnd.getTime() > asOf.getTime()) {
-      return res.status(400).json({
-        message: `Next interest cycle ends on ${borrowerPeriod.periodEnd.toISOString().split('T')[0]}. Interest can be generated only after the period ends.`,
-        nextCycleEnd: borrowerPeriod.periodEnd,
-      });
-    }
-
-    const createdRecords = [];
-    let alreadyExistsCount = 0;
-
-    const upsertRecord = async (doc) => {
-      const filter = {
-        loanId: doc.loanId,
-        lenderId: doc.lenderId ?? null,
-        periodStart: doc.periodStart,
-        periodEnd: doc.periodEnd,
-      };
-
-      // Extra safety: if there are legacy records (startDate/endDate), treat them as duplicates too.
-      const legacyDup = await InterestRecord.findOne({
-        loanId: doc.loanId,
-        lenderId: doc.lenderId ?? null,
-        $or: [
-          { periodStart: doc.periodStart, periodEnd: doc.periodEnd },
-          { startDate: doc.periodStart, endDate: doc.periodEnd },
-        ],
-      }).select('_id');
-
-      if (legacyDup) {
-        alreadyExistsCount += 1;
-        return;
-      }
-
-      const result = await InterestRecord.updateOne(filter, { $setOnInsert: doc }, { upsert: true });
-      const upsertedId = result.upsertedId?._id || result.upsertedId;
-      if (upsertedId) {
-        const inserted = await InterestRecord.findById(upsertedId).populate('lenderId', 'name surname familyGroup');
-        createdRecords.push(inserted);
-      } else {
-        alreadyExistsCount += 1;
-      }
-    };
-
-    // 1) Borrower interest record
-    const borrowerInterest = calculateSimpleInterestDaily({
-      principal: loan.totalLoanAmount,
-      annualRatePct: loan.interestRateAnnual,
-      periodStart: borrowerPeriod.periodStart,
-      periodEnd: borrowerPeriod.periodEnd,
-    });
-
-    await upsertRecord({
-      loanId: loan._id,
-      lenderId: null,
-      principal: loan.totalLoanAmount,
-      borrowerRate: loan.interestRateAnnual,
-      lenderRate: null,
-      days: borrowerInterest.days,
-      periodStart: borrowerPeriod.periodStart,
-      periodEnd: borrowerPeriod.periodEnd,
-      interestAmount: borrowerInterest.interestAmount,
-      status: 'pending',
-
-      // legacy fields
-      principalAmount: loan.totalLoanAmount,
-      interestRate: loan.interestRateAnnual,
-      daysCount: borrowerInterest.days,
-      startDate: borrowerPeriod.periodStart,
-      endDate: borrowerPeriod.periodEnd,
-    });
-
-    // 2) Lender interest records (each lender independently)
-    const lenderIds = loan.lenders
-      .map((l) => l?.lenderId?._id || l?.lenderId)
-      .filter(Boolean);
-
-    const lastLenderRecords = await InterestRecord.find({ loanId: loan._id, lenderId: { $in: lenderIds } })
-      .sort({ periodEnd: -1 })
-      .select('lenderId periodEnd')
-      .lean();
-
-    const lastEndByLenderId = new Map();
-    for (const r of lastLenderRecords) {
-      const key = String(r.lenderId);
-      if (!lastEndByLenderId.has(key) && r.periodEnd) {
-        lastEndByLenderId.set(key, r.periodEnd);
-      }
-    }
-
-    for (const lenderEntry of loan.lenders) {
-      const lenderIdDoc = lenderEntry?.lenderId;
-      const lenderObjectId = lenderIdDoc?._id || lenderIdDoc;
-      if (!lenderObjectId) continue;
-
-      const baseStart = lenderEntry.moneyReceivedDate || lenderEntry.interestStartDate;
-      if (!baseStart) continue;
-
-      const lastEnd = lastEndByLenderId.get(String(lenderObjectId)) || null;
-      const lenderPeriod = getNextInterestPeriodUtc({
-        baseStartDate: baseStart,
-        lastPeriodEnd: lastEnd,
-        cycleMonths,
-      });
-
-      if (!lenderPeriod) continue;
-
-      // If lender joined after the borrower period end, nothing is due for this lender yet.
-      if (lenderPeriod.periodEnd.getTime() > asOf.getTime()) {
-        continue;
-      }
-
-      const lenderInterest = calculateSimpleInterestDaily({
-        principal: lenderEntry.amountContributed,
-        annualRatePct: lenderEntry.lenderInterestRate,
-        periodStart: lenderPeriod.periodStart,
-        periodEnd: lenderPeriod.periodEnd,
-      });
-
-      await upsertRecord({
-        loanId: loan._id,
-        lenderId: lenderObjectId,
-        principal: lenderEntry.amountContributed,
-        borrowerRate: loan.interestRateAnnual,
-        lenderRate: lenderEntry.lenderInterestRate,
-        days: lenderInterest.days,
-        periodStart: lenderPeriod.periodStart,
-        periodEnd: lenderPeriod.periodEnd,
-        interestAmount: lenderInterest.interestAmount,
-        status: 'pending',
-
-        // legacy fields
-        principalAmount: lenderEntry.amountContributed,
-        interestRate: lenderEntry.lenderInterestRate,
-        daysCount: lenderInterest.days,
-        startDate: lenderPeriod.periodStart,
-        endDate: lenderPeriod.periodEnd,
-      });
-    }
-
-    if (createdRecords.length === 0) {
-      return res.status(200).json({
-        message: 'Interest already generated for this period',
-        records: [],
-        alreadyExistsCount,
-      });
-    }
+    const views = refreshed.map((r) => toInterestView({ record: r, loan }));
 
     res.status(201).json({
-      message: 'Interest generated successfully',
-      records: createdRecords.map((r) => toInterestView({ record: r, loan })),
-      alreadyExistsCount,
+      message: 'Interest records regenerated successfully',
+      records: views,
+      summary,
     });
   } catch (error) {
     console.error('Generate interest error:', error);
@@ -363,9 +206,16 @@ export const getPendingInterest = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
+    const scope = String(req.query.scope || 'lender').toLowerCase();
 
-    // Keep pending interest view focused on lender payouts (borrower records have lenderId = null)
-    const records = await InterestRecord.find({ status: 'pending', lenderId: { $ne: null } })
+    let match = { status: 'pending', lenderId: { $ne: null } };
+    if (scope === 'borrower') {
+      match = { status: 'pending', lenderId: null };
+    } else if (scope === 'all') {
+      match = { status: 'pending' };
+    }
+
+    const records = await InterestRecord.find(match)
       .populate({
         path: 'loanId',
         select: 'loanId totalLoanAmount interestRateAnnual borrowerId',
@@ -379,7 +229,7 @@ export const getPendingInterest = async (req, res) => {
       .skip(skip)
       .sort({ periodEnd: 1, endDate: 1 });
 
-    const total = await InterestRecord.countDocuments({ status: 'pending', lenderId: { $ne: null } });
+    const total = await InterestRecord.countDocuments(match);
 
     const views = records.map((r) => {
       const loan = r?.loanId && typeof r.loanId === 'object' && r.loanId._id ? r.loanId : null;

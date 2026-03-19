@@ -4,7 +4,7 @@ import Lender from '../models/Lender.js';
 import InterestRecord from '../models/InterestRecord.js';
 import InterestPayment from '../models/InterestPayment.js';
 import { calculateSimpleInterestDaily } from '../services/interestCalculator.js';
-import { generateDueInterestForLoan } from '../services/interestAutoGenerator.js';
+import { generateInterestRecords } from '../services/interestAutoGenerator.js';
 
 const fullName = (person) => {
   if (!person) return '';
@@ -36,7 +36,7 @@ const toInterestView = ({ record, loan }) => {
     principal: record.principal ?? record.principalAmount,
     borrowerInterest,
     lenderInterest,
-    rate: isBorrowerRecord ? loan.interestRateAnnual : (record.lenderRate ?? record.interestRate),
+    rate: loan.interestRateAnnual,
     days,
     startDate,
     endDate,
@@ -74,6 +74,10 @@ export const createLoan = async (req, res) => {
       return res.status(400).json({ message: 'At least one lender is required' });
     }
 
+    if (interestRateAnnual == null || Number.isNaN(parseFloat(interestRateAnnual))) {
+      return res.status(400).json({ message: 'Annual interest rate is required' });
+    }
+
     // Validate lenders exist
     let fundedAmount = 0;
     const validatedLenders = [];
@@ -91,7 +95,6 @@ export const createLoan = async (req, res) => {
       validatedLenders.push({
         lenderId: lenderData.lenderId,
         amountContributed: parseFloat(lenderData.amountContributed),
-        lenderInterestRate: parseFloat(lenderData.lenderInterestRate),
         moneyReceivedDate: lenderData.moneyReceivedDate,
         interestStartDate: lenderData.moneyReceivedDate, // always equal moneyReceivedDate
       });
@@ -135,10 +138,8 @@ export const createLoan = async (req, res) => {
       }
     }
 
-    // Catch-up generation for loans created with past disbursement dates.
-    // Fire-and-forget so loan creation stays responsive.
-    generateDueInterestForLoan({ loan: loan.toObject(), asOf: new Date() })
-      .catch((err) => console.error('[createLoan] auto interest generation failed:', err));
+    // Always initialize period-wise records from current lender state.
+    await generateInterestRecords({ loan: loan.toObject(), asOf: new Date(), replaceExisting: true });
 
     res.status(201).json({
       message: 'Loan created successfully',
@@ -153,7 +154,7 @@ export const createLoan = async (req, res) => {
 export const addLenderToLoan = async (req, res) => {
   try {
     const { loanId } = req.params;
-    const { lenderId, amountContributed, lenderInterestRate, moneyReceivedDate } = req.body;
+    const { lenderId, amountContributed, moneyReceivedDate } = req.body;
 
     const loan = await Loan.findById(loanId);
     if (!loan) {
@@ -173,7 +174,6 @@ export const addLenderToLoan = async (req, res) => {
     loan.lenders.push({
       lenderId,
       amountContributed: parseFloat(amountContributed),
-      lenderInterestRate: parseFloat(lenderInterestRate),
       moneyReceivedDate,
       interestStartDate: moneyReceivedDate, // always equal moneyReceivedDate
     });
@@ -191,6 +191,9 @@ export const addLenderToLoan = async (req, res) => {
     loan.status = computeFundingStatus(loan.fundedAmount, loan.totalLoanAmount);
 
     await loan.save();
+
+    // Rebuild all loan interest records so new lender is included across all due periods.
+    await generateInterestRecords({ loan: loan.toObject(), asOf: new Date(), replaceExisting: true });
 
     res.status(200).json({
       message: 'Lender added to loan successfully',
@@ -335,6 +338,10 @@ export const updateLoanStatus = async (req, res) => {
       return res.status(404).json({ message: 'Loan not found' });
     }
 
+    if (status === 'FULLY_FUNDED') {
+      await generateInterestRecords({ loan: loan.toObject(), asOf: new Date(), replaceExisting: true });
+    }
+
     res.status(200).json({
       message: 'Loan status updated successfully',
       loan,
@@ -342,18 +349,6 @@ export const updateLoanStatus = async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-};
-
-const deleteUnpaidInterestForLoan = async (loanObjectId) => {
-  await InterestRecord.deleteMany({ loanId: loanObjectId, status: { $ne: 'paid' } });
-};
-
-const deleteUnpaidInterestForLender = async ({ loanObjectId, lenderObjectId }) => {
-  await InterestRecord.deleteMany({
-    loanId: loanObjectId,
-    lenderId: lenderObjectId,
-    status: { $ne: 'paid' },
-  });
 };
 
 export const updateLoan = async (req, res) => {
@@ -441,10 +436,9 @@ export const updateLoan = async (req, res) => {
     const shouldRecalculateUnpaidInterest =
       hasInterestRateChanged || hasAmountChanged || hasPeriodChanged || hasDisbursementChanged;
 
-    // Interest integrity: preserve paid; regenerate unpaid only when interest inputs changed.
+    // Interest integrity: rebuild period-wise records from latest loan/lender state.
     if (shouldRecalculateUnpaidInterest) {
-      await deleteUnpaidInterestForLoan(loan._id);
-      await generateDueInterestForLoan({ loan: loan.toObject(), asOf: new Date() });
+      await generateInterestRecords({ loan: loan.toObject(), asOf: new Date(), replaceExisting: true });
     }
 
     const populated = await Loan.findById(loan._id).populate('borrowerId').populate('lenders.lenderId');
@@ -462,7 +456,7 @@ export const updateLoan = async (req, res) => {
 export const updateLenderContribution = async (req, res) => {
   try {
     const { loanId, lenderEntryId } = req.params;
-    const { amountContributed, lenderInterestRate, moneyReceivedDate } = req.body;
+    const { amountContributed, moneyReceivedDate } = req.body;
 
     const loan = await Loan.findById(loanId);
     if (!loan) return res.status(404).json({ message: 'Loan not found' });
@@ -480,14 +474,6 @@ export const updateLenderContribution = async (req, res) => {
         return res.status(400).json({ message: 'Amount must be a positive number' });
       }
       entry.amountContributed = a;
-    }
-
-    if (lenderInterestRate != null) {
-      const r = parseFloat(lenderInterestRate);
-      if (Number.isNaN(r) || r < 0) {
-        return res.status(400).json({ message: 'Lender interest rate must be a non-negative number' });
-      }
-      entry.lenderInterestRate = r;
     }
 
     if (moneyReceivedDate != null) {
@@ -509,12 +495,8 @@ export const updateLenderContribution = async (req, res) => {
 
     await loan.save();
 
-    // Recalculate interest for this lender only (preserve paid)
-    const lenderObjectId = entry.lenderId;
-    await deleteUnpaidInterestForLender({ loanObjectId: loan._id, lenderObjectId });
-    const loanObj = loan.toObject();
-    loanObj.lenders = (loanObj.lenders || []).filter((l) => String(l.lenderId) === String(lenderObjectId));
-    await generateDueInterestForLoan({ loan: loanObj, asOf: new Date() });
+    // Rebuild all period-wise records to keep borrower and lender totals aligned.
+    await generateInterestRecords({ loan: loan.toObject(), asOf: new Date(), replaceExisting: true });
 
     const populated = await Loan.findById(loan._id).populate('borrowerId').populate('lenders.lenderId');
 
@@ -542,7 +524,6 @@ export const removeLenderContribution = async (req, res) => {
     const entry = loan.lenders?.id(lenderEntryId);
     if (!entry) return res.status(404).json({ message: 'Lender contribution not found' });
 
-    const lenderObjectId = entry.lenderId;
     entry.deleteOne();
 
     loan.fundedAmount = loan.lenders.reduce((sum, l) => sum + (Number(l.amountContributed) || 0), 0);
@@ -551,14 +532,8 @@ export const removeLenderContribution = async (req, res) => {
 
     await loan.save();
 
-    // Remove unpaid interest for that lender; if lender still exists via other entries, regenerate
-    await deleteUnpaidInterestForLender({ loanObjectId: loan._id, lenderObjectId });
-    const stillHasLender = loan.lenders.some((l) => String(l.lenderId) === String(lenderObjectId));
-    if (stillHasLender) {
-      const loanObj = loan.toObject();
-      loanObj.lenders = (loanObj.lenders || []).filter((l) => String(l.lenderId) === String(lenderObjectId));
-      await generateDueInterestForLoan({ loan: loanObj, asOf: new Date() });
-    }
+    // Rebuild all period-wise records after lender removal.
+    await generateInterestRecords({ loan: loan.toObject(), asOf: new Date(), replaceExisting: true });
 
     const populated = await Loan.findById(loan._id).populate('borrowerId').populate('lenders.lenderId');
 

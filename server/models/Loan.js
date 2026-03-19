@@ -74,11 +74,6 @@ const loanSchema = new mongoose.Schema(
           required: true,
           min: [0, 'Amount must be positive'],
         },
-        lenderInterestRate: {
-          type: Number,
-          required: true,
-          min: [0, 'Interest rate must be positive'],
-        },
         moneyReceivedDate: {
           type: Date,
           required: true,

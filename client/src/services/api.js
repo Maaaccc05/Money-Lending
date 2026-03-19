@@ -80,7 +80,8 @@ export const loanAPI = {
 export const interestAPI = {
   generate: (loanId, endDate) => api.post(`/interest/generate/${loanId}`, { endDate }),
   list: (page = 1, limit = 10) => api.get('/interest', { params: { page, limit } }),
-  getPending: (page = 1, limit = 10) => api.get('/interest/pending', { params: { page, limit } }),
+  getPending: (page = 1, limit = 10, scope = 'lender') =>
+    api.get('/interest/pending', { params: { page, limit, scope } }),
   recordPayment: (data) => api.post('/interest/record-payment', data),
   getPayments: (page = 1, limit = 10) => api.get('/interest/payments', { params: { page, limit } }),
   getByLoan: (loanId) => api.get(`/interest/${loanId}`),

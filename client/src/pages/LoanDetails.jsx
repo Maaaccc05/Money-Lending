@@ -31,7 +31,7 @@ export const LoanDetails = () => {
   const [showLenderDropdown, setShowLenderDropdown] = useState(false);
   const [selectedLender, setSelectedLender] = useState(null);
   const [newLender, setNewLender] = useState({
-    lenderId: '', amountContributed: '', lenderInterestRate: '', moneyReceivedDate: '',
+    lenderId: '', amountContributed: '', moneyReceivedDate: '',
   });
   const [addError, setAddError] = useState('');
   const [addSuccess, setAddSuccess] = useState('');
@@ -65,7 +65,6 @@ export const LoanDetails = () => {
     name: '',
     surname: '',
     amountContributed: '',
-    lenderInterestRate: '',
     moneyReceivedDate: '',
   });
   const [editLenderError, setEditLenderError] = useState('');
@@ -188,11 +187,10 @@ export const LoanDetails = () => {
       await loanAPI.addLender(data.loan._id, {
         lenderId: newLender.lenderId,
         amountContributed: parseFloat(newLender.amountContributed),
-        lenderInterestRate: parseFloat(newLender.lenderInterestRate) || 0,
         moneyReceivedDate: newLender.moneyReceivedDate,
       });
       setAddSuccess('Lender added successfully!');
-      setNewLender({ lenderId: '', amountContributed: '', lenderInterestRate: '', moneyReceivedDate: '' });
+      setNewLender({ lenderId: '', amountContributed: '', moneyReceivedDate: '' });
       setSelectedLender(null);
       setLenderSearch('');
       setLenderResults([]);
@@ -235,18 +233,23 @@ export const LoanDetails = () => {
         ? `${l.lenderId.name || ''} ${l.lenderId.surname || ''}`.trim()
         : '';
       const start = l?.moneyReceivedDate || l?.interestStartDate;
-      const calc = calculateSimpleInterestDailyLive({
-        principal: l?.amountContributed,
-        annualRatePct: l?.lenderInterestRate,
+      const totalCalcForWindow = calculateSimpleInterestDailyLive({
+        principal: loan.totalLoanAmount,
+        annualRatePct: loan.interestRateAnnual,
         periodStart: start,
         periodEnd: today,
       });
+      const contributionShare = Number(loan.totalLoanAmount) > 0
+        ? (Number(l?.amountContributed) || 0) / Number(loan.totalLoanAmount)
+        : 0;
+      const proportionalInterest = Math.round((totalCalcForWindow.interestAmount * contributionShare) * 100) / 100;
+
       return {
         key: `${l?.lenderId?._id || lenderName || 'lender'}-${String(start || '')}`,
         lenderName,
         startDate: start,
         endDate: today,
-        interestAmount: calc.interestAmount,
+        interestAmount: proportionalInterest,
       };
     });
 
@@ -375,7 +378,6 @@ export const LoanDetails = () => {
       name: entry.lenderId?.name || '',
       surname: entry.lenderId?.surname || '',
       amountContributed: String(entry.amountContributed ?? ''),
-      lenderInterestRate: String(entry.lenderInterestRate ?? ''),
       moneyReceivedDate: toDateInputValue(entry.moneyReceivedDate),
     });
     setShowEditLender(true);
@@ -388,17 +390,12 @@ export const LoanDetails = () => {
     setEditLenderError('');
 
     const amount = parseFloat(editLenderForm.amountContributed);
-    const rate = parseFloat(editLenderForm.lenderInterestRate);
     if (!editLenderForm.name.trim() || !editLenderForm.surname.trim()) {
       setEditLenderError('Lender name and surname are required');
       return;
     }
     if (Number.isNaN(amount) || amount <= 0) {
       setEditLenderError('Amount must be greater than 0');
-      return;
-    }
-    if (Number.isNaN(rate) || rate < 0) {
-      setEditLenderError('Interest rate must be 0 or more');
       return;
     }
     if (!editLenderForm.moneyReceivedDate) {
@@ -427,7 +424,6 @@ export const LoanDetails = () => {
       // Update contribution in loan
       await loanAPI.updateLenderContribution(loan._id, entry._id, {
         amountContributed: amount,
-        lenderInterestRate: rate,
         moneyReceivedDate: editLenderForm.moneyReceivedDate,
       });
 
@@ -715,7 +711,6 @@ export const LoanDetails = () => {
                                   <tr>
                                     <th className="px-4 py-2 border-b">Lender Name</th>
                                     <th className="px-4 py-2 border-b">Amount</th>
-                                    <th className="px-4 py-2 border-b">Rate(%)</th>
                                     <th className="px-4 py-2 border-b">Recv. Date</th>
                                     <th className="px-4 py-2 border-b text-right">Actions</th>
                                   </tr>
@@ -729,7 +724,6 @@ export const LoanDetails = () => {
                                       <td className="px-4 py-2.5 text-gray-700 font-semibold">
                                         ₹{m.amountContributed.toLocaleString('en-IN')}
                                       </td>
-                                      <td className="px-4 py-2.5 text-gray-600">{m.lenderInterestRate}%</td>
                                       <td className="px-4 py-2.5 text-gray-600 tabular-nums">
                                         {new Date(m.moneyReceivedDate).toLocaleDateString('en-IN')}
                                       </td>
@@ -826,15 +820,6 @@ export const LoanDetails = () => {
                               type="number" min="1" placeholder="e.g. 1500"
                               value={newLender.amountContributed}
                               onChange={(e) => setNewLender((p) => ({ ...p, amountContributed: e.target.value }))}
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium mb-1.5 text-gray-700">Interest Rate (%)</label>
-                            <input
-                              type="number" step="0.01" min="0" placeholder="e.g. 12"
-                              value={newLender.lenderInterestRate}
-                              onChange={(e) => setNewLender((p) => ({ ...p, lenderInterestRate: e.target.value }))}
                               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                             />
                           </div>
@@ -1138,17 +1123,6 @@ export const LoanDetails = () => {
                           min="1"
                           value={editLenderForm.amountContributed}
                           onChange={(e) => setEditLenderForm((p) => ({ ...p, amountContributed: e.target.value }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1.5 text-gray-700">Interest Rate (%)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={editLenderForm.lenderInterestRate}
-                          onChange={(e) => setEditLenderForm((p) => ({ ...p, lenderInterestRate: e.target.value }))}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>

@@ -146,7 +146,7 @@ export const getLoansByLender = async (req, res) => {
               loanId: '$loanId',
               borrower: '$borrower',
               amountContributed: '$lenders.amountContributed',
-              lenderInterestRate: '$lenders.lenderInterestRate',
+              annualInterestRate: '$interestRateAnnual',
               status: '$status',
               loanStatus: '$loanStatus',
               createdAt: '$createdAt',

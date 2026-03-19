@@ -22,7 +22,6 @@ export const CreateLoan = () => {
   const [currentLender, setCurrentLender] = useState({
     lenderId: '',
     amountContributed: '',
-    lenderInterestRate: '',
     moneyReceivedDate: '',
   });
   const [error, setError] = useState('');
@@ -90,11 +89,10 @@ export const CreateLoan = () => {
     setLoanLenders([...loanLenders, {
       ...currentLender,
       amountContributed: parseFloat(currentLender.amountContributed),
-      lenderInterestRate: parseFloat(currentLender.lenderInterestRate) || 0,
       lenderName: `${selectedLender.name} ${selectedLender.surname}`,
       familyGroup: selectedLender.familyGroup || 'Other',
     }]);
-    setCurrentLender({ lenderId: '', amountContributed: '', lenderInterestRate: '', moneyReceivedDate: '' });
+    setCurrentLender({ lenderId: '', amountContributed: '', moneyReceivedDate: '' });
     setSelectedLender(null);
     setLenderSearch('');
     setLenders([]);
@@ -137,6 +135,10 @@ export const CreateLoan = () => {
         setError('Please enter a valid loan amount');
         return;
       }
+      if (loanData.interestRateAnnual === '' || Number.isNaN(parseFloat(loanData.interestRateAnnual))) {
+        setError('Please enter a valid annual interest rate');
+        return;
+      }
 
       await loanAPI.create({
         borrowerId: selectedBorrower._id,
@@ -147,7 +149,6 @@ export const CreateLoan = () => {
         lenders: loanLenders.map((l) => ({
           lenderId: l.lenderId,
           amountContributed: parseFloat(l.amountContributed),
-          lenderInterestRate: parseFloat(l.lenderInterestRate),
           moneyReceivedDate: l.moneyReceivedDate,
         })),
       });
@@ -314,7 +315,7 @@ export const CreateLoan = () => {
             {/* Add Lender Section */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <h2 className="text-lg font-bold mb-4 text-gray-800">Add Lender Contribution</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                 {/* Lender search */}
                 <div>
                   <label className="block text-sm font-medium mb-1.5 text-gray-700">Lender</label>
@@ -376,18 +377,6 @@ export const CreateLoan = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1.5 text-gray-700">Interest Rate (%)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="e.g. 12"
-                    value={currentLender.lenderInterestRate}
-                    onChange={(e) => setCurrentLender({ ...currentLender, lenderInterestRate: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
                   <label className="block text-sm font-medium mb-1.5 text-gray-700">Money Received Date</label>
                   <input
                     type="date"
@@ -433,17 +422,15 @@ export const CreateLoan = () => {
                             <tr>
                               <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Lender</th>
                               <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Amount</th>
-                              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Rate</th>
                               <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Date</th>
                               <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Remove</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {members.map(({ idx, lenderName, amountContributed, lenderInterestRate, moneyReceivedDate }) => (
+                            {members.map(({ idx, lenderName, amountContributed, moneyReceivedDate }) => (
                               <tr key={idx} className="border-b hover:bg-gray-50">
                                 <td className="px-4 py-2.5 text-sm font-medium text-gray-800">{lenderName}</td>
                                 <td className="px-4 py-2.5 text-sm font-semibold text-gray-800">₹{parseFloat(amountContributed).toLocaleString('en-IN')}</td>
-                                <td className="px-4 py-2.5 text-sm text-gray-600">{lenderInterestRate}%</td>
                                 <td className="px-4 py-2.5 text-sm text-gray-500 tabular-nums">{moneyReceivedDate}</td>
                                 <td className="px-4 py-2.5">
                                   <button

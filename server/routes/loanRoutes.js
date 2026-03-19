@@ -72,7 +72,6 @@ router.put(
     param('loanId').isMongoId().withMessage('Invalid loan ID'),
     param('lenderEntryId').isMongoId().withMessage('Invalid lender contribution ID'),
     body('amountContributed').optional().isNumeric().withMessage('Valid amount is required').toFloat(),
-    body('lenderInterestRate').optional().isNumeric().withMessage('Valid interest rate is required').toFloat(),
     body('moneyReceivedDate').optional().isISO8601().withMessage('Valid money received date is required'),
   ],
   handleValidationErrors,
@@ -100,10 +99,6 @@ router.put(
       .isNumeric()
       .withMessage('Valid amount is required')
       .toFloat(),
-    body('lenderInterestRate')
-      .isNumeric()
-      .withMessage('Valid interest rate is required')
-      .toFloat(),
     body('moneyReceivedDate').isISO8601().withMessage('Valid money received date is required'),
   ],
   handleValidationErrors,
@@ -119,10 +114,6 @@ router.post(
     body('amountContributed')
       .isNumeric()
       .withMessage('Valid amount is required')
-      .toFloat(),
-    body('lenderInterestRate')
-      .isNumeric()
-      .withMessage('Valid interest rate is required')
       .toFloat(),
     body('moneyReceivedDate').isISO8601().withMessage('Valid money received date is required'),
   ],
