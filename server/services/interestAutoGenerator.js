@@ -115,6 +115,7 @@ export const generateCurrentPeriodInterest = async ({ loan, asOf = new Date(), r
 
   const rawLenders = Array.isArray(loan.lenders) ? loan.lenders : [];
   const activeLenders = rawLenders.filter((l) => {
+    if (String(l?.status || 'active').toLowerCase() === 'closed') return false;
     const joined = toUtcStartOfDay(l.moneyReceivedDate || l.interestStartDate);
     return joined && joined.getTime() <= period.periodStart.getTime();
   });

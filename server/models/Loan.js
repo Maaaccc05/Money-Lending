@@ -82,6 +82,25 @@ const loanSchema = new mongoose.Schema(
           type: Date,
           required: true,
         },
+        status: {
+          type: String,
+          enum: ['active', 'closed'],
+          default: 'active',
+        },
+        closedAt: {
+          type: Date,
+          default: null,
+        },
+        interestPaid: {
+          type: Number,
+          default: 0,
+          min: [0, 'Interest paid must be non-negative'],
+        },
+        settlementReceiptUrl: {
+          type: String,
+          default: null,
+          trim: true,
+        },
       },
     ],
   },

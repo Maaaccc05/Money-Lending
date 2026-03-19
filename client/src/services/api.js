@@ -73,6 +73,8 @@ export const loanAPI = {
     api.put(`/loans/${loanId}/lenders/${lenderEntryId}`, data),
   removeLenderContribution: (loanId, lenderEntryId) =>
     api.delete(`/loans/${loanId}/lenders/${lenderEntryId}`),
+  closeLenderContribution: (loanId, lenderEntryId) =>
+    api.patch(`/loans/${loanId}/lenders/${lenderEntryId}/close`),
   updateStatus: (id, status) => api.put(`/loans/${id}/status`, { status }),
 };
 

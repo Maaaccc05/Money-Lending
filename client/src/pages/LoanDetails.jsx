@@ -17,6 +17,13 @@ const STATUS_STYLE = {
   closed:          'bg-red-100 text-red-700 border-red-200',
 };
 
+const LENDER_STATUS_STYLE = {
+  active: 'bg-green-100 text-green-700 border-green-200',
+  closed: 'bg-red-100 text-red-700 border-red-200',
+};
+
+const lenderContributionStatus = (entry) => String(entry?.status || 'active').toLowerCase();
+
 export const LoanDetails = () => {
   const { loanId } = useParams();
   const navigate = useNavigate();
@@ -70,10 +77,8 @@ export const LoanDetails = () => {
   const [editLenderError, setEditLenderError] = useState('');
   const [isSavingLender, setIsSavingLender] = useState(false);
 
-  // Close / Delete
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
-  const [closeError, setCloseError] = useState('');
+  // Per-lender settlement / Delete
+  const [settlingLenderId, setSettlingLenderId] = useState('');
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -197,12 +202,10 @@ export const LoanDetails = () => {
     setShowEditLoan(false);
     setShowEditBorrower(false);
     setShowEditLender(false);
-    setShowCloseConfirm(false);
     setShowDeleteConfirm(false);
     setEditLoanError('');
     setEditBorrowerError('');
     setEditLenderError('');
-    setCloseError('');
     setDeleteError('');
   }, [loanId]);
 
@@ -278,6 +281,7 @@ export const LoanDetails = () => {
       : '';
 
     const activeLenders = (Array.isArray(loan.lenders) ? loan.lenders : []).filter((l) => {
+      if (lenderContributionStatus(l) === 'closed') return false;
       const joined = toUtcStartOfDay(l?.moneyReceivedDate || l?.interestStartDate);
       return joined && joined.getTime() <= period.periodStart.getTime();
     });
@@ -497,33 +501,29 @@ export const LoanDetails = () => {
     }
   };
 
-  const removeLenderContribution = async (entry) => {
+  const settleLenderContribution = async (entry) => {
     const loan = data?.loan;
     if (!loan?._id || !entry?._id) return;
-    const lenderName = `${entry.lenderId?.name || ''} ${entry.lenderId?.surname || ''}`.trim() || 'this lender';
-    const ok = window.confirm(`Remove contribution for ${lenderName}?`);
-    if (!ok) return;
-    try {
-      await loanAPI.removeLenderContribution(loan._id, entry._id);
-      await fetchLoanData();
-    } catch (err) {
-      window.alert(err.response?.data?.message || 'Failed to remove lender contribution');
-    }
-  };
+    if (lenderContributionStatus(entry) === 'closed') return;
 
-  const confirmCloseLoan = async () => {
-    const loan = data?.loan;
-    if (!loan?._id) return;
-    setCloseError('');
-    setIsClosing(true);
+    const lenderName = `${entry.lenderId?.name || ''} ${entry.lenderId?.surname || ''}`.trim() || 'this lender';
+    const ok = window.confirm(`Settle and close lender contribution for ${lenderName}?`);
+    if (!ok) return;
+
+    setSettlingLenderId(entry._id);
     try {
-      await loanAPI.close(loan._id);
-      setShowCloseConfirm(false);
+      const response = await loanAPI.closeLenderContribution(loan._id, entry._id);
+      const receiptUrl = response?.data?.settlement?.receiptPdfUrl;
+      setAddSuccess(
+        receiptUrl
+          ? `Lender settled successfully. Receipt: ${receiptUrl}`
+          : 'Lender settled successfully.'
+      );
       await fetchLoanData();
     } catch (err) {
-      setCloseError(err.response?.data?.message || 'Failed to close loan');
+      window.alert(err.response?.data?.message || 'Failed to settle lender contribution');
     } finally {
-      setIsClosing(false);
+      setSettlingLenderId('');
     }
   };
 
@@ -644,14 +644,6 @@ export const LoanDetails = () => {
                       >
                         Edit Loan
                       </button>
-                      {loan.status !== 'CLOSED' && (
-                        <button
-                          onClick={() => setShowCloseConfirm(true)}
-                          className="text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                          Close Loan
-                        </button>
-                      )}
                       <button
                         onClick={() => setShowDeleteConfirm(true)}
                         className="text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
@@ -772,6 +764,7 @@ export const LoanDetails = () => {
                                     <th className="px-4 py-2 border-b">Lender Name</th>
                                     <th className="px-4 py-2 border-b">Amount</th>
                                     <th className="px-4 py-2 border-b">Recv. Date</th>
+                                    <th className="px-4 py-2 border-b">Status</th>
                                     <th className="px-4 py-2 border-b text-right">Actions</th>
                                   </tr>
                                 </thead>
@@ -787,20 +780,27 @@ export const LoanDetails = () => {
                                       <td className="px-4 py-2.5 text-gray-600 tabular-nums">
                                         {new Date(m.moneyReceivedDate).toLocaleDateString('en-IN')}
                                       </td>
+                                      <td className="px-4 py-2.5">
+                                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold border ${LENDER_STATUS_STYLE[lenderContributionStatus(m)] || LENDER_STATUS_STYLE.active}`}>
+                                          {lenderContributionStatus(m)}
+                                        </span>
+                                      </td>
                                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                         <button
                                           onClick={() => openEditLenderContribution(m)}
-                                          disabled={loan.status === 'CLOSED'}
+                                          disabled={loan.status === 'CLOSED' || lenderContributionStatus(m) === 'closed'}
                                           className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
                                         >
                                           Edit
                                         </button>
                                         <button
-                                          onClick={() => removeLenderContribution(m)}
-                                          disabled={loan.status === 'CLOSED'}
-                                          className="ml-2 text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                                          onClick={() => settleLenderContribution(m)}
+                                          disabled={loan.status === 'CLOSED' || lenderContributionStatus(m) === 'closed' || settlingLenderId === m._id}
+                                          className="ml-2 text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
                                         >
-                                          Remove
+                                          {lenderContributionStatus(m) === 'closed'
+                                            ? 'Closed'
+                                            : (settlingLenderId === m._id ? 'Closing...' : 'Close')}
                                         </button>
                                       </td>
                                     </tr>
@@ -1206,39 +1206,6 @@ export const LoanDetails = () => {
                       </button>
                       <button
                         onClick={() => setShowEditLender(false)}
-                        className="flex-1 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {showCloseConfirm && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-                <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-100">
-                  <div className="px-6 py-4 border-b">
-                    <h3 className="text-lg font-bold text-gray-800">Close Loan</h3>
-                    <p className="text-sm text-gray-600 mt-1">Closing stops any new interest generation for this loan.</p>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    {closeError && (
-                      <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg flex items-center gap-1.5">
-                        <AlertCircle size={15} /> {closeError}
-                      </div>
-                    )}
-                    <div className="flex gap-3">
-                      <button
-                        onClick={confirmCloseLoan}
-                        disabled={isClosing}
-                        className="flex-1 bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-800 font-medium disabled:opacity-50 transition-colors"
-                      >
-                        {isClosing ? 'Closing...' : 'Confirm Close'}
-                      </button>
-                      <button
-                        onClick={() => setShowCloseConfirm(false)}
                         className="flex-1 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium transition-colors"
                       >
                         Cancel

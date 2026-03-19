@@ -89,6 +89,17 @@ router.delete(
   loanController.removeLenderContribution
 );
 
+// Settle/close a lender contribution entry inside a loan
+router.patch(
+  '/:loanId/lenders/:lenderEntryId/close',
+  [
+    param('loanId').isMongoId().withMessage('Invalid loan ID'),
+    param('lenderEntryId').isMongoId().withMessage('Invalid lender contribution ID'),
+  ],
+  handleValidationErrors,
+  loanController.closeLenderContribution
+);
+
 // PUT route to add a new lender contribution to an existing loan
 router.put(
   '/:loanId/add-lender',

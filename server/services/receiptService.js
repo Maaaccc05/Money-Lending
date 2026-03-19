@@ -71,6 +71,42 @@ export const renderReceiptHtml = ({
   </html>`;
 };
 
+export const renderLenderSettlementReceiptHtml = ({
+  loanPublicId,
+  lenderName,
+  principalAmount,
+  totalInterestPaid,
+  paymentDate,
+}) => {
+  return `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>Lender Settlement Receipt</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 24px; }
+        h1 { font-size: 18px; margin: 0 0 8px 0; }
+        .meta { margin: 0 0 16px 0; color: #333; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        td { padding: 8px; border: 1px solid #ddd; vertical-align: top; }
+        .label { width: 40%; background: #f7f7f7; font-weight: bold; }
+      </style>
+    </head>
+    <body>
+      <h1>Lender Settlement Receipt</h1>
+      <div class="meta">Payment Date: ${esc(formatDate(paymentDate))}</div>
+
+      <table>
+        <tr><td class="label">Loan ID</td><td>${esc(loanPublicId)}</td></tr>
+        <tr><td class="label">Lender Name</td><td>${esc(lenderName)}</td></tr>
+        <tr><td class="label">Principal Amount</td><td>₹${esc(formatMoney(principalAmount))}</td></tr>
+        <tr><td class="label">Total Interest Paid</td><td>₹${esc(formatMoney(totalInterestPaid))}</td></tr>
+        <tr><td class="label">Settlement Date</td><td>${esc(formatDate(paymentDate))}</td></tr>
+      </table>
+    </body>
+  </html>`;
+};
+
 export const generateReceiptPdf = async ({
   outputDir,
   publicBaseUrlPath,
@@ -107,5 +143,6 @@ export const generateReceiptPdf = async ({
 
 export default {
   renderReceiptHtml,
+  renderLenderSettlementReceiptHtml,
   generateReceiptPdf,
 };

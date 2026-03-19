@@ -3,7 +3,9 @@ import Borrower from '../models/Borrower.js';
 import Lender from '../models/Lender.js';
 import InterestRecord from '../models/InterestRecord.js';
 import InterestPayment from '../models/InterestPayment.js';
+import path from 'path';
 import { generateInterestRecords } from '../services/interestAutoGenerator.js';
+import { generateReceiptPdf, renderLenderSettlementReceiptHtml } from '../services/receiptService.js';
 
 const fullName = (person) => {
   if (!person) return '';
@@ -43,6 +45,23 @@ const computeFundingStatus = (funded, total) => {
   if (funded <= 0) return 'PENDING';
   if (funded >= total) return 'FULLY_FUNDED';
   return 'PARTIALLY_FUNDED';
+};
+
+const isLenderClosed = (entry) => String(entry?.status || 'active').toLowerCase() === 'closed';
+
+const recomputeLoanOperationalStatus = (loan) => {
+  const lenders = Array.isArray(loan?.lenders) ? loan.lenders : [];
+  const hasAnyLender = lenders.length > 0;
+  const allLendersClosed = hasAnyLender && lenders.every((l) => isLenderClosed(l));
+
+  if (allLendersClosed) {
+    loan.loanStatus = 'CLOSED';
+    loan.status = 'CLOSED';
+    return;
+  }
+
+  loan.loanStatus = 'ACTIVE';
+  loan.status = computeFundingStatus(Number(loan.fundedAmount) || 0, Number(loan.totalLoanAmount) || 0);
 };
 
 export const createLoan = async (req, res) => {
@@ -460,6 +479,10 @@ export const updateLenderContribution = async (req, res) => {
     const entry = loan.lenders?.id(lenderEntryId);
     if (!entry) return res.status(404).json({ message: 'Lender contribution not found' });
 
+    if (isLenderClosed(entry)) {
+      return res.status(400).json({ message: 'Cannot edit a closed lender contribution' });
+    }
+
     if (amountContributed != null) {
       const a = parseFloat(amountContributed);
       if (Number.isNaN(a) || a <= 0) {
@@ -516,6 +539,10 @@ export const removeLenderContribution = async (req, res) => {
     const entry = loan.lenders?.id(lenderEntryId);
     if (!entry) return res.status(404).json({ message: 'Lender contribution not found' });
 
+    if (isLenderClosed(entry)) {
+      return res.status(400).json({ message: 'Cannot remove a closed lender contribution' });
+    }
+
     entry.deleteOne();
 
     loan.fundedAmount = loan.lenders.reduce((sum, l) => sum + (Number(l.amountContributed) || 0), 0);
@@ -563,6 +590,103 @@ export const closeLoan = async (req, res) => {
   }
 };
 
+export const closeLenderContribution = async (req, res) => {
+  try {
+    const { loanId, lenderEntryId } = req.params;
+
+    const loan = await Loan.findById(loanId).populate('borrowerId').populate('lenders.lenderId');
+    if (!loan) return res.status(404).json({ message: 'Loan not found' });
+
+    const entry = loan.lenders?.id(lenderEntryId);
+    if (!entry) return res.status(404).json({ message: 'Lender contribution not found' });
+
+    if (isLenderClosed(entry)) {
+      return res.status(400).json({ message: 'This lender contribution is already closed' });
+    }
+
+    const lenderObjectId = entry?.lenderId?._id || entry?.lenderId;
+    if (!lenderObjectId) {
+      return res.status(400).json({ message: 'Invalid lender contribution: lender missing' });
+    }
+
+    const pendingLenderRecords = await InterestRecord.find({
+      loanId: loan._id,
+      lenderId: lenderObjectId,
+      status: 'pending',
+    });
+
+    const totalInterestPayable = pendingLenderRecords.reduce(
+      (sum, r) => sum + (Number(r?.interestAmount) || 0),
+      0
+    );
+
+    const settledAt = new Date();
+
+    if (pendingLenderRecords.length > 0) {
+      const pendingIds = pendingLenderRecords.map((r) => r._id);
+      await InterestRecord.updateMany(
+        { _id: { $in: pendingIds } },
+        {
+          $set: {
+            status: 'paid',
+            paymentDate: settledAt,
+            amountReceived: null,
+            tdsAmount: null,
+            balanceAmount: null,
+            tdsPercent: 0,
+          },
+        }
+      );
+    }
+
+    entry.status = 'closed';
+    entry.closedAt = settledAt;
+    entry.interestPaid = Math.round((Number(entry.interestPaid || 0) + totalInterestPayable) * 100) / 100;
+
+    const lenderName = fullName(entry.lenderId);
+    const settlementReceiptHtml = renderLenderSettlementReceiptHtml({
+      loanPublicId: loan.loanId,
+      lenderName,
+      principalAmount: Number(entry.amountContributed) || 0,
+      totalInterestPaid: entry.interestPaid,
+      paymentDate: settledAt,
+    });
+
+    const { publicUrl } = await generateReceiptPdf({
+      outputDir: path.resolve(process.cwd(), 'receipts'),
+      publicBaseUrlPath: '/receipts',
+      html: settlementReceiptHtml,
+      fileNameBase: `lender-settlement-${loan.loanId}-${String(lenderObjectId)}`,
+    });
+
+    entry.settlementReceiptUrl = publicUrl;
+
+    recomputeLoanOperationalStatus(loan);
+
+    await loan.save();
+
+    await generateInterestRecords({ loan: loan.toObject(), asOf: new Date(), replaceExisting: true });
+
+    const populated = await Loan.findById(loan._id).populate('borrowerId').populate('lenders.lenderId');
+
+    return res.status(200).json({
+      message: 'Lender settled successfully',
+      settlement: {
+        loanId: loan.loanId,
+        lenderName,
+        principalAmount: Number(entry.amountContributed) || 0,
+        totalInterestPaid: entry.interestPaid,
+        paymentDate: settledAt,
+        receiptPdfUrl: publicUrl,
+      },
+      loan: populated,
+    });
+  } catch (error) {
+    console.error('Close lender contribution error:', error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 export const deleteLoan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -592,6 +716,7 @@ export default {
   updateLoan,
   updateLenderContribution,
   removeLenderContribution,
+  closeLenderContribution,
   updateLoanStatus,
   closeLoan,
   deleteLoan,
