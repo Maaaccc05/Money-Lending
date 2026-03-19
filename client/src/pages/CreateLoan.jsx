@@ -5,7 +5,7 @@ import { Plus, Trash2, AlertCircle, CheckCircle, IndianRupee } from 'lucide-reac
 
 export const CreateLoan = () => {
   const [borrowers, setBorrowers] = useState([]);
-  const [lenders, setLenders] = useState([]);
+  const [lenderResults, setLenderResults] = useState([]);
   const [selectedBorrower, setSelectedBorrower] = useState(null);
   const [borrowerSearch, setBorrowerSearch] = useState('');
   const [showBorrowerDropdown, setShowBorrowerDropdown] = useState(false);
@@ -18,7 +18,8 @@ export const CreateLoan = () => {
     interestRateAnnual: '',
     interestPeriodMonths: 1,
   });
-  const [loanLenders, setLoanLenders] = useState([]);
+  const [lenders, setLenders] = useState([]);
+  const [isAddingLender, setIsAddingLender] = useState(true);
   const [currentLender, setCurrentLender] = useState({
     lenderId: '',
     amountContributed: '',
@@ -54,10 +55,10 @@ export const CreateLoan = () => {
     setLenderSearch(query);
     setSelectedLender(null);
     setCurrentLender((prev) => ({ ...prev, lenderId: '' }));
-    if (query.length < 2) { setLenders([]); setShowLenderDropdown(false); return; }
+    if (query.length < 2) { setLenderResults([]); setShowLenderDropdown(false); return; }
     try {
       const { data } = await lenderAPI.search(query);
-      setLenders(data);
+      setLenderResults(data);
       setShowLenderDropdown(true);
     } catch (err) {
       console.error('Search error:', err);
@@ -86,7 +87,7 @@ export const CreateLoan = () => {
       return;
     }
 
-    setLoanLenders([...loanLenders, {
+    setLenders([...lenders, {
       ...currentLender,
       amountContributed: parseFloat(currentLender.amountContributed),
       lenderName: `${selectedLender.name} ${selectedLender.surname}`,
@@ -95,17 +96,22 @@ export const CreateLoan = () => {
     setCurrentLender({ lenderId: '', amountContributed: '', moneyReceivedDate: '' });
     setSelectedLender(null);
     setLenderSearch('');
-    setLenders([]);
+    setLenderResults([]);
+    setIsAddingLender(false);
     setError('');
   };
 
   const handleRemoveLender = (index) => {
-    setLoanLenders(loanLenders.filter((_, i) => i !== index));
+    const next = lenders.filter((_, i) => i !== index);
+    setLenders(next);
+    if (next.length === 0) {
+      setIsAddingLender(true);
+    }
   };
 
   // --- Derived funding stats ---
   const totalAmount = parseFloat(loanData.totalLoanAmount) || 0;
-  const fundedAmount = loanLenders.reduce((sum, l) => sum + parseFloat(l.amountContributed), 0);
+  const fundedAmount = lenders.reduce((sum, l) => sum + parseFloat(l.amountContributed), 0);
   const remainingAmount = Math.max(0, totalAmount - fundedAmount);
   const fundingStatus = fundedAmount === 0
     ? 'PENDING'
@@ -127,7 +133,7 @@ export const CreateLoan = () => {
         setError('Please select a borrower');
         return;
       }
-      if (loanLenders.length === 0) {
+      if (lenders.length === 0) {
         setError('Please add at least one lender');
         return;
       }
@@ -146,7 +152,7 @@ export const CreateLoan = () => {
         disbursementDate: loanData.disbursementDate,
         interestRateAnnual: parseFloat(loanData.interestRateAnnual),
         interestPeriodMonths: parseInt(loanData.interestPeriodMonths),
-        lenders: loanLenders.map((l) => ({
+        lenders: lenders.map((l) => ({
           lenderId: l.lenderId,
           amountContributed: parseFloat(l.amountContributed),
           moneyReceivedDate: l.moneyReceivedDate,
@@ -158,7 +164,8 @@ export const CreateLoan = () => {
       setBorrowerSearch('');
       setBorrowers([]);
       setLoanData({ totalLoanAmount: '', disbursementDate: '', interestRateAnnual: '', interestPeriodMonths: 1 });
-      setLoanLenders([]);
+      setLenders([]);
+      setIsAddingLender(true);
       setSuccess('Loan created successfully!');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to create loan');
@@ -315,7 +322,9 @@ export const CreateLoan = () => {
             {/* Add Lender Section */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <h2 className="text-lg font-bold mb-4 text-gray-800">Add Lender Contribution</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+              {(lenders.length === 0 || isAddingLender) && (
+                <div className="transition-all duration-200">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                 {/* Lender search */}
                 <div>
                   <label className="block text-sm font-medium mb-1.5 text-gray-700">Lender</label>
@@ -325,16 +334,16 @@ export const CreateLoan = () => {
                       placeholder="Search lender..."
                       value={lenderSearch}
                       onChange={(e) => handleLenderSearch(e.target.value)}
-                      onFocus={() => lenders.length > 0 && setShowLenderDropdown(true)}
+                      onFocus={() => lenderResults.length > 0 && setShowLenderDropdown(true)}
                       onBlur={() => setTimeout(() => setShowLenderDropdown(false), 150)}
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       autoComplete="off"
                     />
-                    {showLenderDropdown && lenders.length > 0 && (
+                    {showLenderDropdown && lenderResults.length > 0 && (
                       <ul className="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
                         {(() => {
                           const grouped = {};
-                          lenders.forEach((l) => {
+                          lenderResults.forEach((l) => {
                             const g = l.familyGroup || 'Other';
                             if (!grouped[g]) grouped[g] = [];
                             grouped[g].push(l);
@@ -386,27 +395,56 @@ export const CreateLoan = () => {
                   />
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleAddLender}
-                className="flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg hover:bg-green-700 font-medium transition-colors"
-              >
-                <Plus size={18} /> Add Lender
-              </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleAddLender}
+                      className="flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg hover:bg-green-700 font-medium transition-colors"
+                    >
+                      <Plus size={18} /> Save Lender
+                    </button>
+                    {lenders.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingLender(false);
+                          setCurrentLender({ lenderId: '', amountContributed: '', moneyReceivedDate: '' });
+                          setSelectedLender(null);
+                          setLenderSearch('');
+                          setLenderResults([]);
+                        }}
+                        className="px-5 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {lenders.length > 0 && !isAddingLender && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingLender(true)}
+                  className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                >
+                  <Plus size={18} /> Add Lender
+                </button>
+              )}
             </div>
 
             {/* Staged Lenders List */}
-            {loanLenders.length > 0 && (
+            {lenders.length > 0 && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-gray-800">Lenders Added ({loanLenders.length})</h2>
+                  <h2 className="text-lg font-bold text-gray-800">Lenders Added ({lenders.length})</h2>
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${statusColors[fundingStatus]}`}>
                     {fundingStatus.replace('_', ' ')}
                   </span>
                 </div>
                 {(() => {
                   const grouped = {};
-                  loanLenders.forEach((l, idx) => {
+                  lenders.forEach((l, idx) => {
                     const g = l.familyGroup || 'Other';
                     if (!grouped[g]) grouped[g] = [];
                     grouped[g].push({ ...l, idx });

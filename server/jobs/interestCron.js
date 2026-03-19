@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { generateDueInterestForAllLoans } from '../services/interestAutoGenerator.js';
+import { generateCurrentPeriodInterestForAllLoans } from '../services/interestAutoGenerator.js';
 
 const parseBool = (value, defaultValue) => {
   if (value == null) return defaultValue;
@@ -24,9 +24,9 @@ export const startInterestCronJob = () => {
     schedule,
     async () => {
       try {
-        const summary = await generateDueInterestForAllLoans({ asOf: new Date() });
+        const summary = await generateCurrentPeriodInterestForAllLoans({ asOf: new Date() });
         console.log(
-          `[interestCron] ${summary.asOf.toISOString()} loans=${summary.loansScanned} borrowerCreated=${summary.borrowerRecordsCreated} lenderCreated=${summary.lenderRecordsCreated} dupSkipped=${summary.skippedDuplicates} errors=${summary.errors}`
+          `[interestCron] ${summary.asOf.toISOString()} loans=${summary.loansScanned} borrowerCreated=${summary.borrowerRecordsCreated} lenderCreated=${summary.lenderRecordsCreated} replaced=${summary.replacedRecords} errors=${summary.errors}`
         );
       } catch (err) {
         console.error('[interestCron] job error', err);

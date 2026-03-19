@@ -2,10 +2,7 @@ import InterestRecord from '../models/InterestRecord.js';
 import InterestPayment from '../models/InterestPayment.js';
 import Loan from '../models/Loan.js';
 import path from 'path';
-import {
-  calculateSimpleInterestDaily,
-} from '../services/interestCalculator.js';
-import { generateInterestRecords } from '../services/interestAutoGenerator.js';
+import { generateCurrentPeriodInterest, generateCurrentPeriodInterestForAllLoans } from '../services/interestAutoGenerator.js';
 import { renderReceiptHtml, generateReceiptPdf } from '../services/receiptService.js';
 
 const fullName = (person) => {
@@ -19,16 +16,9 @@ const toInterestView = ({ record, loan }) => {
   const endDate = record.periodEnd || record.endDate;
   const days = record.days ?? record.daysCount;
 
-  const borrowerInterestCalc = calculateSimpleInterestDaily({
-    principal: loan.totalLoanAmount,
-    annualRatePct: loan.interestRateAnnual,
-    periodStart: startDate,
-    periodEnd: endDate,
-  });
-
   const isBorrowerRecord = !record.lenderId;
   const lenderInterest = isBorrowerRecord ? 0 : record.interestAmount;
-  const borrowerInterest = isBorrowerRecord ? record.interestAmount : borrowerInterestCalc.interestAmount;
+  const borrowerInterest = isBorrowerRecord ? record.interestAmount : 0;
 
   return {
     _id: record._id,
@@ -115,6 +105,8 @@ export const getAllInterestRecords = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
+    await generateCurrentPeriodInterestForAllLoans({ asOf: new Date() });
+
     const [records, total] = await Promise.all([
       InterestRecord.find()
         .populate({
@@ -177,7 +169,7 @@ export const generateInterest = async (req, res) => {
       return res.status(404).json({ message: 'Loan not found' });
     }
 
-    const summary = await generateInterestRecords({
+    const summary = await generateCurrentPeriodInterest({
       loan: loan.toObject(),
       asOf,
       replaceExisting: true,
@@ -207,6 +199,8 @@ export const getPendingInterest = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
     const scope = String(req.query.scope || 'lender').toLowerCase();
+
+    await generateCurrentPeriodInterestForAllLoans({ asOf: new Date() });
 
     let match = { status: 'pending', lenderId: { $ne: null } };
     if (scope === 'borrower') {
@@ -436,6 +430,8 @@ export const getInterestRecordsByLoan = async (req, res) => {
     if (!loan) {
       return res.status(404).json({ message: 'Loan not found' });
     }
+
+    await generateCurrentPeriodInterest({ loan: loan.toObject(), asOf: new Date(), replaceExisting: true });
 
     const records = await InterestRecord.find({ loanId: loan._id })
       .populate('lenderId', 'name surname')

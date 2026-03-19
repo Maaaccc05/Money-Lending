@@ -94,7 +94,59 @@ export const LoanDetails = () => {
     return diff + 1;
   };
 
-  const calculateSimpleInterestDailyLive = ({ principal, annualRatePct, periodStart, periodEnd }) => {
+  const getLastDateOfMonth = (value) => {
+    const d = toUtcStartOfDay(value);
+    if (!d) return null;
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
+  };
+
+  const addMonthsUtc = (value, months) => {
+    const d = toUtcStartOfDay(value);
+    if (!d) return null;
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + Number(months || 0), d.getUTCDate()));
+  };
+
+  const getCurrentInterestPeriodLive = ({ disbursementDate, cycleMonths, asOfDate = new Date() }) => {
+    const loanStart = toUtcStartOfDay(disbursementDate);
+    const asOf = toUtcStartOfDay(asOfDate);
+    if (!loanStart || !asOf) return null;
+
+    if (Number(cycleMonths) === 1) {
+      const firstEnd = getLastDateOfMonth(loanStart);
+      if (asOf.getTime() <= firstEnd.getTime()) {
+        return { periodStart: loanStart, periodEnd: firstEnd };
+      }
+      const startOfCurrentMonth = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1));
+      return { periodStart: startOfCurrentMonth, periodEnd: getLastDateOfMonth(asOf) };
+    }
+
+    if (Number(cycleMonths) === 3) {
+      const firstEnd = getLastDateOfMonth(loanStart);
+      if (asOf.getTime() <= firstEnd.getTime()) {
+        return { periodStart: loanStart, periodEnd: firstEnd };
+      }
+      const firstFullStart = new Date(Date.UTC(loanStart.getUTCFullYear(), loanStart.getUTCMonth() + 1, 1));
+      const monthsSince = (asOf.getUTCFullYear() - firstFullStart.getUTCFullYear()) * 12 + (asOf.getUTCMonth() - firstFullStart.getUTCMonth());
+      const cycleIndex = Math.floor(Math.max(0, monthsSince) / 3);
+      const periodStart = addMonthsUtc(firstFullStart, cycleIndex * 3);
+      const periodEnd = getLastDateOfMonth(addMonthsUtc(periodStart, 2));
+      return { periodStart, periodEnd };
+    }
+
+    // Keep 6-month cycle behavior consistent with existing boundaries.
+    let periodStart = loanStart;
+    for (let i = 0; i < 500; i += 1) {
+      const periodEnd = getLastDateOfMonth(addMonthsUtc(periodStart, 5));
+      if (asOf.getTime() <= periodEnd.getTime()) {
+        return { periodStart, periodEnd };
+      }
+      periodStart = new Date(Date.UTC(periodEnd.getUTCFullYear(), periodEnd.getUTCMonth() + 1, 1));
+    }
+
+    return null;
+  };
+
+  const calculatePeriodInterestLive = ({ principal, annualRatePct, periodStart, periodEnd }) => {
     const days = diffDaysInclusiveUtc(periodStart, periodEnd);
     if (days == null || days <= 0) {
       return { interestAmount: 0, days: days ?? 0 };
@@ -214,51 +266,59 @@ export const LoanDetails = () => {
     const loan = data?.loan;
     if (!loan) return;
 
-    const today = new Date();
+    const period = getCurrentInterestPeriodLive({
+      disbursementDate: loan.disbursementDate,
+      cycleMonths: Number(loan.interestPeriodMonths) || 1,
+      asOfDate: new Date(),
+    });
+    if (!period) return;
 
     const borrowerName = loan?.borrowerId
       ? `${loan.borrowerId.name || ''} ${loan.borrowerId.surname || ''}`.trim()
       : '';
 
-    const borrowerCalc = calculateSimpleInterestDailyLive({
-      principal: loan.totalLoanAmount,
+    const activeLenders = (Array.isArray(loan.lenders) ? loan.lenders : []).filter((l) => {
+      const joined = toUtcStartOfDay(l?.moneyReceivedDate || l?.interestStartDate);
+      return joined && joined.getTime() <= period.periodStart.getTime();
+    });
+    const activePrincipal = activeLenders.reduce((sum, l) => sum + (Number(l?.amountContributed) || 0), 0);
+
+    const borrowerCalc = calculatePeriodInterestLive({
+      principal: activePrincipal,
       annualRatePct: loan.interestRateAnnual,
-      periodStart: loan.disbursementDate,
-      periodEnd: today,
+      periodStart: period.periodStart,
+      periodEnd: period.periodEnd,
     });
 
-    const lenders = Array.isArray(loan.lenders) ? loan.lenders : [];
-    const lenderRows = lenders.map((l) => {
+    let distributedInterest = 0;
+    const lenderRows = activeLenders.map((l, idx) => {
       const lenderName = l?.lenderId
         ? `${l.lenderId.name || ''} ${l.lenderId.surname || ''}`.trim()
         : '';
-      const start = l?.moneyReceivedDate || l?.interestStartDate;
-      const totalCalcForWindow = calculateSimpleInterestDailyLive({
-        principal: loan.totalLoanAmount,
-        annualRatePct: loan.interestRateAnnual,
-        periodStart: start,
-        periodEnd: today,
-      });
-      const contributionShare = Number(loan.totalLoanAmount) > 0
-        ? (Number(l?.amountContributed) || 0) / Number(loan.totalLoanAmount)
+      const contributionShare = activePrincipal > 0
+        ? (Number(l?.amountContributed) || 0) / activePrincipal
         : 0;
-      const proportionalInterest = Math.round((totalCalcForWindow.interestAmount * contributionShare) * 100) / 100;
+      let proportionalInterest = Math.round((borrowerCalc.interestAmount * contributionShare) * 100) / 100;
+      if (idx === activeLenders.length - 1) {
+        proportionalInterest = Math.round((borrowerCalc.interestAmount - distributedInterest) * 100) / 100;
+      }
+      distributedInterest = Math.round((distributedInterest + proportionalInterest) * 100) / 100;
 
       return {
-        key: `${l?.lenderId?._id || lenderName || 'lender'}-${String(start || '')}`,
+        key: `${l?.lenderId?._id || lenderName || 'lender'}-${String(period.periodStart || '')}`,
         lenderName,
-        startDate: start,
-        endDate: today,
+        startDate: period.periodStart,
+        endDate: period.periodEnd,
         interestAmount: proportionalInterest,
       };
     });
 
     setLiveInterest({
-      asOf: today,
+      asOf: period.periodEnd,
       borrower: {
         borrowerName,
-        startDate: loan.disbursementDate,
-        endDate: today,
+        startDate: period.periodStart,
+        endDate: period.periodEnd,
         interestAmount: borrowerCalc.interestAmount,
       },
       lenders: lenderRows,
@@ -874,7 +934,7 @@ export const LoanDetails = () => {
                   {!showLiveInterest ? (
                     <div className="text-center py-10 text-gray-600 bg-gray-50 rounded-xl border border-gray-100">
                       <p className="text-sm font-medium">Interest not shown</p>
-                      <p className="text-xs text-gray-500 mt-1">Click “Show Interest” to calculate totals till today.</p>
+                      <p className="text-xs text-gray-500 mt-1">Click “Show Interest” to calculate totals for the current period.</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -887,13 +947,13 @@ export const LoanDetails = () => {
                               {borrower?.name ? `${borrower?.name} ${borrower?.surname}` : '-'}
                             </p>
                             <p className="text-xs text-gray-600 mt-1 tabular-nums">
-                              {loan.disbursementDate ? new Date(loan.disbursementDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                              {liveInterest?.borrower?.startDate ? new Date(liveInterest.borrower.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
                               <span className="text-gray-400 mx-1">→</span>
-                              {liveInterest?.asOf ? new Date(liveInterest.asOf).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today'}
+                              {liveInterest?.borrower?.endDate ? new Date(liveInterest.borrower.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
                             </p>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="text-[11px] text-gray-500">Total Interest till today</p>
+                            <p className="text-[11px] text-gray-500">Interest Due</p>
                             <p className="text-lg font-bold text-orange-600">₹{Number(liveInterest?.borrower?.interestAmount || 0).toLocaleString('en-IN')}</p>
                           </div>
                         </div>
@@ -914,11 +974,11 @@ export const LoanDetails = () => {
                                     <p className="text-xs text-gray-600 mt-1 tabular-nums">
                                       {l.startDate ? new Date(l.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
                                       <span className="text-gray-400 mx-1">→</span>
-                                      {liveInterest?.asOf ? new Date(liveInterest.asOf).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today'}
+                                      {l.endDate ? new Date(l.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
                                     </p>
                                   </div>
                                   <div className="text-right shrink-0">
-                                    <p className="text-[11px] text-gray-500">Total Interest till today</p>
+                                    <p className="text-[11px] text-gray-500">Interest Accrued</p>
                                     <p className="text-base font-bold text-blue-600">₹{Number(l.interestAmount || 0).toLocaleString('en-IN')}</p>
                                   </div>
                                 </div>

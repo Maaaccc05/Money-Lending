@@ -3,7 +3,6 @@ import Borrower from '../models/Borrower.js';
 import Lender from '../models/Lender.js';
 import InterestRecord from '../models/InterestRecord.js';
 import InterestPayment from '../models/InterestPayment.js';
-import { calculateSimpleInterestDaily } from '../services/interestCalculator.js';
 import { generateInterestRecords } from '../services/interestAutoGenerator.js';
 
 const fullName = (person) => {
@@ -17,16 +16,9 @@ const toInterestView = ({ record, loan }) => {
   const endDate = record.periodEnd || record.endDate;
   const days = record.days ?? record.daysCount;
 
-  const borrowerInterestCalc = calculateSimpleInterestDaily({
-    principal: loan.totalLoanAmount,
-    annualRatePct: loan.interestRateAnnual,
-    periodStart: startDate,
-    periodEnd: endDate,
-  });
-
   const isBorrowerRecord = !record.lenderId;
   const lenderInterest = isBorrowerRecord ? 0 : record.interestAmount;
-  const borrowerInterest = isBorrowerRecord ? record.interestAmount : borrowerInterestCalc.interestAmount;
+  const borrowerInterest = isBorrowerRecord ? record.interestAmount : 0;
 
   return {
     _id: record._id,

@@ -3,7 +3,7 @@
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-const toUtcStartOfDay = (value) => {
+export const toUtcStartOfDay = (value) => {
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -33,6 +33,24 @@ export const endOfMonthUtc = (date) => {
   return new Date(Date.UTC(y, m + 1, 0));
 };
 
+export const startOfMonthUtc = (date) => {
+  const d = toUtcStartOfDay(date);
+  if (!d) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+};
+
+export const firstDayNextMonthUtc = (date) => {
+  const d = toUtcStartOfDay(date);
+  if (!d) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+};
+
+export const addMonthsUtc = (date, months) => {
+  const d = toUtcStartOfDay(date);
+  if (!d) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + Number(months || 0), d.getUTCDate()));
+};
+
 const halfYearCycleCandidatesUtc = (year) => [
   new Date(Date.UTC(year, 2, 31)), // Mar 31
   new Date(Date.UTC(year, 8, 30)), // Sep 30
@@ -42,16 +60,8 @@ export const getNextCycleEndDateUtc = (periodStart, cycleMonths) => {
   const start = toUtcStartOfDay(periodStart);
   if (!start) return null;
 
-  if (cycleMonths === 1) {
-    // Fixed-day cycle: 30 days total, inclusive of start and end.
-    // (We subtract 1 because diffDaysInclusiveUtc counts both endpoints.)
-    return addDaysUtc(start, 29);
-  }
-
-  if (cycleMonths === 3) {
-    // Fixed-day cycle: 90 days total, inclusive of start and end.
-    return addDaysUtc(start, 89);
-  }
+  if (cycleMonths === 1) return endOfMonthUtc(start);
+  if (cycleMonths === 3) return endOfMonthUtc(addMonthsUtc(start, 2));
 
   const year = start.getUTCFullYear();
   const candidates = halfYearCycleCandidatesUtc(year);
@@ -61,12 +71,11 @@ export const getNextCycleEndDateUtc = (periodStart, cycleMonths) => {
   }
 
   // Start is after the last cycle end date in this year; move to next year.
-  const nextYearCandidates =
-    cycleMonths === 3 ? quarterCycleCandidatesUtc(year + 1) : halfYearCycleCandidatesUtc(year + 1);
+  const nextYearCandidates = halfYearCycleCandidatesUtc(year + 1);
   return nextYearCandidates[0];
 };
 
-export const calculateSimpleInterestDaily = ({ principal, annualRatePct, periodStart, periodEnd }) => {
+export const calculatePeriodInterest = ({ principal, annualRatePct, periodStart, periodEnd }) => {
   const days = diffDaysInclusiveUtc(periodStart, periodEnd);
   if (days == null) {
     throw new Error('Invalid dates for interest calculation');
@@ -100,11 +109,80 @@ export const getNextInterestPeriodUtc = ({ baseStartDate, lastPeriodEnd, cycleMo
   return { periodStart, periodEnd };
 };
 
+const monthDiff = (startMonthDate, endMonthDate) => {
+  const s = startOfMonthUtc(startMonthDate);
+  const e = startOfMonthUtc(endMonthDate);
+  if (!s || !e) return 0;
+  return (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + (e.getUTCMonth() - s.getUTCMonth());
+};
+
+const getCurrentRollingPeriod1M = ({ loanStart, asOf }) => {
+  const firstEnd = endOfMonthUtc(loanStart);
+  if (asOf.getTime() <= firstEnd.getTime()) {
+    return { periodStart: loanStart, periodEnd: firstEnd };
+  }
+  const periodStart = startOfMonthUtc(asOf);
+  const periodEnd = endOfMonthUtc(asOf);
+  return { periodStart, periodEnd };
+};
+
+const getCurrentRollingPeriod3M = ({ loanStart, asOf }) => {
+  const firstEnd = endOfMonthUtc(loanStart);
+  if (asOf.getTime() <= firstEnd.getTime()) {
+    return { periodStart: loanStart, periodEnd: firstEnd };
+  }
+
+  const firstFullStart = firstDayNextMonthUtc(loanStart);
+  const monthsSinceFirstFullStart = monthDiff(firstFullStart, asOf);
+  const cycleIndex = Math.floor(Math.max(0, monthsSinceFirstFullStart) / 3);
+  const periodStart = addMonthsUtc(firstFullStart, cycleIndex * 3);
+  const periodEnd = endOfMonthUtc(addMonthsUtc(periodStart, 2));
+  return { periodStart, periodEnd };
+};
+
+// Rolling active period selector used by current-period-only interest generation.
+// 6-month logic intentionally reuses existing period boundary behavior.
+export const getCurrentInterestPeriodUtc = ({ loanStartDate, cycleMonths, asOfDate = new Date() }) => {
+  const loanStart = toUtcStartOfDay(loanStartDate);
+  const asOf = toUtcStartOfDay(asOfDate);
+  if (!loanStart || !asOf) return null;
+
+  if (cycleMonths === 1) {
+    return getCurrentRollingPeriod1M({ loanStart, asOf });
+  }
+
+  if (cycleMonths === 3) {
+    return getCurrentRollingPeriod3M({ loanStart, asOf });
+  }
+
+  if (cycleMonths === 6) {
+    let lastPeriodEnd = null;
+    for (let i = 0; i < 2000; i += 1) {
+      const period = getNextInterestPeriodUtc({
+        baseStartDate: loanStart,
+        lastPeriodEnd,
+        cycleMonths,
+      });
+      if (!period) return null;
+      if (asOf.getTime() <= period.periodEnd.getTime()) return period;
+      lastPeriodEnd = period.periodEnd;
+    }
+    return null;
+  }
+
+  return null;
+};
+
 export default {
   addDaysUtc,
+  addMonthsUtc,
   diffDaysInclusiveUtc,
   endOfMonthUtc,
+  firstDayNextMonthUtc,
+  getCurrentInterestPeriodUtc,
   getNextCycleEndDateUtc,
-  calculateSimpleInterestDaily,
+  calculatePeriodInterest,
   getNextInterestPeriodUtc,
+  startOfMonthUtc,
+  toUtcStartOfDay,
 };
