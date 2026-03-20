@@ -79,6 +79,9 @@ export const LoanDetails = () => {
 
   // Per-lender settlement / Delete
   const [settlingLenderId, setSettlingLenderId] = useState('');
+  const [showSettleConfirm, setShowSettleConfirm] = useState(false);
+  const [settleTarget, setSettleTarget] = useState(null);
+  const [settleError, setSettleError] = useState('');
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -111,6 +114,62 @@ export const LoanDetails = () => {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + Number(months || 0), d.getUTCDate()));
   };
 
+  const getSixMonthCycleLive = (value) => {
+    const d = toUtcStartOfDay(value);
+    if (!d) return null;
+
+    const year = d.getUTCFullYear();
+    const month = d.getUTCMonth() + 1;
+
+    if (month >= 4 && month <= 9) {
+      return {
+        periodStart: new Date(Date.UTC(year, 3, 1)),
+        periodEnd: new Date(Date.UTC(year, 8, 30)),
+      };
+    }
+
+    if (month >= 10) {
+      return {
+        periodStart: new Date(Date.UTC(year, 9, 1)),
+        periodEnd: new Date(Date.UTC(year + 1, 2, 31)),
+      };
+    }
+
+    return {
+      periodStart: new Date(Date.UTC(year - 1, 9, 1)),
+      periodEnd: new Date(Date.UTC(year, 2, 31)),
+    };
+  };
+
+  const getSixMonthPeriodsLive = ({ disbursementDate, asOfDate = new Date() }) => {
+    const loanStart = toUtcStartOfDay(disbursementDate);
+    const asOf = toUtcStartOfDay(asOfDate);
+    if (!loanStart || !asOf) return [];
+    if (asOf.getTime() < loanStart.getTime()) return [];
+
+    const y = loanStart.getUTCFullYear();
+    const m = loanStart.getUTCMonth() + 1;
+
+    let firstEnd;
+    if (m >= 1 && m <= 3) firstEnd = new Date(Date.UTC(y, 2, 31));
+    else if (m >= 4 && m <= 9) firstEnd = new Date(Date.UTC(y, 8, 30));
+    else firstEnd = new Date(Date.UTC(y + 1, 2, 31));
+
+    const periods = [{ periodStart: loanStart, periodEnd: firstEnd }];
+    if (asOf.getTime() <= firstEnd.getTime()) return periods;
+
+    let cursor = new Date(firstEnd.getTime() + 24 * 60 * 60 * 1000);
+    for (let i = 0; i < 2000; i += 1) {
+      const cycle = getSixMonthCycleLive(cursor);
+      if (!cycle) break;
+      periods.push(cycle);
+      if (asOf.getTime() <= cycle.periodEnd.getTime()) break;
+      cursor = new Date(cycle.periodEnd.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    return periods;
+  };
+
   const getCurrentInterestPeriodLive = ({ disbursementDate, cycleMonths, asOfDate = new Date() }) => {
     const loanStart = toUtcStartOfDay(disbursementDate);
     const asOf = toUtcStartOfDay(asOfDate);
@@ -138,17 +197,9 @@ export const LoanDetails = () => {
       return { periodStart, periodEnd };
     }
 
-    // Keep 6-month cycle behavior consistent with existing boundaries.
-    let periodStart = loanStart;
-    for (let i = 0; i < 500; i += 1) {
-      const periodEnd = getLastDateOfMonth(addMonthsUtc(periodStart, 5));
-      if (asOf.getTime() <= periodEnd.getTime()) {
-        return { periodStart, periodEnd };
-      }
-      periodStart = new Date(Date.UTC(periodEnd.getUTCFullYear(), periodEnd.getUTCMonth() + 1, 1));
-    }
-
-    return null;
+    const periods = getSixMonthPeriodsLive({ disbursementDate, asOfDate: asOf });
+    if (!periods.length) return null;
+    return periods[periods.length - 1];
   };
 
   const calculatePeriodInterestLive = ({ principal, annualRatePct, periodStart, periodEnd }) => {
@@ -202,6 +253,9 @@ export const LoanDetails = () => {
     setShowEditLoan(false);
     setShowEditBorrower(false);
     setShowEditLender(false);
+    setShowSettleConfirm(false);
+    setSettleTarget(null);
+    setSettleError('');
     setShowDeleteConfirm(false);
     setEditLoanError('');
     setEditBorrowerError('');
@@ -501,27 +555,30 @@ export const LoanDetails = () => {
     }
   };
 
-  const settleLenderContribution = async (entry) => {
+  const openSettleLenderConfirm = (entry) => {
+    if (!entry?._id) return;
+    if (lenderContributionStatus(entry) === 'closed') return;
+    setSettleError('');
+    setSettleTarget(entry);
+    setShowSettleConfirm(true);
+  };
+
+  const settleLenderContribution = async () => {
     const loan = data?.loan;
+    const entry = settleTarget;
     if (!loan?._id || !entry?._id) return;
     if (lenderContributionStatus(entry) === 'closed') return;
 
-    const lenderName = `${entry.lenderId?.name || ''} ${entry.lenderId?.surname || ''}`.trim() || 'this lender';
-    const ok = window.confirm(`Settle and close lender contribution for ${lenderName}?`);
-    if (!ok) return;
-
     setSettlingLenderId(entry._id);
+    setSettleError('');
     try {
-      const response = await loanAPI.closeLenderContribution(loan._id, entry._id);
-      const receiptUrl = response?.data?.settlement?.receiptPdfUrl;
-      setAddSuccess(
-        receiptUrl
-          ? `Lender settled successfully. Receipt: ${receiptUrl}`
-          : 'Lender settled successfully.'
-      );
+      await loanAPI.closeLenderContribution(loan._id, entry._id);
+      setAddSuccess('Lender settled successfully');
+      setShowSettleConfirm(false);
+      setSettleTarget(null);
       await fetchLoanData();
     } catch (err) {
-      window.alert(err.response?.data?.message || 'Failed to settle lender contribution');
+      setSettleError(err.response?.data?.message || 'Failed to settle lender contribution');
     } finally {
       setSettlingLenderId('');
     }
@@ -794,7 +851,7 @@ export const LoanDetails = () => {
                                           Edit
                                         </button>
                                         <button
-                                          onClick={() => settleLenderContribution(m)}
+                                          onClick={() => openSettleLenderConfirm(m)}
                                           disabled={loan.status === 'CLOSED' || lenderContributionStatus(m) === 'closed' || settlingLenderId === m._id}
                                           className="ml-2 text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
                                         >
@@ -1209,6 +1266,41 @@ export const LoanDetails = () => {
                         className="flex-1 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium transition-colors"
                       >
                         Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showSettleConfirm && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-100">
+                  <div className="px-6 py-4 border-b">
+                    <h3 className="text-lg font-bold text-gray-800">Confirm Lender Settlement</h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Are you sure you want to close this lender? This will finalize interest calculation.
+                    </p>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    {settleError && (
+                      <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                        <AlertCircle size={15} /> {settleError}
+                      </div>
+                    )}
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => { setShowSettleConfirm(false); setSettleTarget(null); setSettleError(''); }}
+                        className="flex-1 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={settleLenderContribution}
+                        disabled={Boolean(settlingLenderId)}
+                        className="flex-1 bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-gray-800 font-medium disabled:opacity-50 transition-colors"
+                      >
+                        {settlingLenderId ? 'Confirming...' : 'Confirm'}
                       </button>
                     </div>
                   </div>

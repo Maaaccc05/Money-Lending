@@ -4,7 +4,7 @@ import Lender from '../models/Lender.js';
 import InterestRecord from '../models/InterestRecord.js';
 import InterestPayment from '../models/InterestPayment.js';
 import path from 'path';
-import { generateInterestRecords } from '../services/interestAutoGenerator.js';
+import { generateInterestRecords, generateSettlementInterest } from '../services/interestAutoGenerator.js';
 import { generateReceiptPdf, renderLenderSettlementReceiptHtml } from '../services/receiptService.js';
 
 const fullName = (person) => {
@@ -604,6 +604,12 @@ export const closeLenderContribution = async (req, res) => {
       return res.status(400).json({ message: 'This lender contribution is already closed' });
     }
 
+    const settledAt = new Date();
+    // Build historical schedule only up to day before settlement,
+    // so settlement creates the final record up to settledAt.
+    const asOfBeforeSettlement = new Date(settledAt.getTime() - (24 * 60 * 60 * 1000));
+    await generateInterestRecords({ loan: loan.toObject(), asOf: asOfBeforeSettlement, replaceExisting: false });
+
     const lenderObjectId = entry?.lenderId?._id || entry?.lenderId;
     if (!lenderObjectId) {
       return res.status(400).json({ message: 'Invalid lender contribution: lender missing' });
@@ -619,8 +625,6 @@ export const closeLenderContribution = async (req, res) => {
       (sum, r) => sum + (Number(r?.interestAmount) || 0),
       0
     );
-
-    const settledAt = new Date();
 
     if (pendingLenderRecords.length > 0) {
       const pendingIds = pendingLenderRecords.map((r) => r._id);
@@ -639,9 +643,18 @@ export const closeLenderContribution = async (req, res) => {
       );
     }
 
+    // Add final settlement period records (lender + borrower).
+    const settlementInterest = await generateSettlementInterest({
+      loan: loan.toObject(),
+      lenderEntry: entry.toObject ? entry.toObject() : entry,
+      settlementDate: settledAt,
+    });
+
     entry.status = 'closed';
     entry.closedAt = settledAt;
-    entry.interestPaid = Math.round((Number(entry.interestPaid || 0) + totalInterestPayable) * 100) / 100;
+    entry.interestPaid = Math.round(
+      (Number(entry.interestPaid || 0) + totalInterestPayable + Number(settlementInterest?.lenderInterestAmount || 0)) * 100
+    ) / 100;
 
     const lenderName = fullName(entry.lenderId);
     const settlementReceiptHtml = renderLenderSettlementReceiptHtml({
@@ -665,8 +678,6 @@ export const closeLenderContribution = async (req, res) => {
 
     await loan.save();
 
-    await generateInterestRecords({ loan: loan.toObject(), asOf: new Date(), replaceExisting: true });
-
     const populated = await Loan.findById(loan._id).populate('borrowerId').populate('lenders.lenderId');
 
     return res.status(200).json({
@@ -676,6 +687,7 @@ export const closeLenderContribution = async (req, res) => {
         lenderName,
         principalAmount: Number(entry.amountContributed) || 0,
         totalInterestPaid: entry.interestPaid,
+        settlementInterestAdded: Number(settlementInterest?.lenderInterestAmount || 0),
         paymentDate: settledAt,
         receiptPdfUrl: publicUrl,
       },

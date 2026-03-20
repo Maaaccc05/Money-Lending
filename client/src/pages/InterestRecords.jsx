@@ -153,7 +153,7 @@ export const InterestRecords = () => {
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Borrower Name</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Total Loan Amount</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Borrower Interest</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Days</th>
+                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Period Start Date</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">End Date</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
@@ -166,7 +166,7 @@ export const InterestRecords = () => {
                           <td className="px-6 py-4 text-sm text-gray-900">{row.borrowerName || '-'}</td>
                           <td className="px-6 py-4 text-sm text-gray-900">{formatINR(row.totalLoanAmount)}</td>
                           <td className="px-6 py-4 text-sm font-semibold text-gray-900">{formatINR(row.borrowerInterest)}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{row.days ?? '-'}</td>
+                          <td className="px-6 py-4 text-sm text-gray-900">{formatDate(row.startDate)}</td>
                           <td className="px-6 py-4 text-sm text-gray-900">{formatDate(row.endDate)}</td>
                           <td className="px-6 py-4 text-sm">
                             <StatusBadge status={row.status} />
@@ -196,7 +196,7 @@ export const InterestRecords = () => {
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Principal</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Lender Interest</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Rate</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Days</th>
+                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Period Start Date</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">End Date</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
@@ -211,7 +211,7 @@ export const InterestRecords = () => {
                           <td className="px-6 py-4 text-sm text-gray-900">{formatINR(row.principal)}</td>
                           <td className="px-6 py-4 text-sm font-semibold text-gray-900">{formatINR(row.lenderInterest)}</td>
                           <td className="px-6 py-4 text-sm text-gray-900">{row.rate ?? '-'}%</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{row.days ?? '-'}</td>
+                          <td className="px-6 py-4 text-sm text-gray-900">{formatDate(row.startDate)}</td>
                           <td className="px-6 py-4 text-sm text-gray-900">{formatDate(row.endDate)}</td>
                           <td className="px-6 py-4 text-sm">
                             <StatusBadge status={row.status} />

@@ -33,6 +33,9 @@ export const endOfMonthUtc = (date) => {
   return new Date(Date.UTC(y, m + 1, 0));
 };
 
+// Public alias used by interest generation utilities.
+export const getLastDateOfMonth = (date) => endOfMonthUtc(date);
+
 export const startOfMonthUtc = (date) => {
   const d = toUtcStartOfDay(date);
   if (!d) return null;
@@ -49,6 +52,130 @@ export const addMonthsUtc = (date, months) => {
   const d = toUtcStartOfDay(date);
   if (!d) return null;
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + Number(months || 0), d.getUTCDate()));
+};
+
+// Public alias used by interest generation utilities.
+export const addMonths = (date, months) => addMonthsUtc(date, months);
+
+// Period boundary resolver for month-based cycles.
+// periodType supports 1 and 3 months here; 6-month uses financial cycle helpers.
+export const getPeriodEndDate = (startDate, periodType) => {
+  const start = toUtcStartOfDay(startDate);
+  if (!start) return null;
+
+  if (Number(periodType) === 1) {
+    return getLastDateOfMonth(start);
+  }
+
+  if (Number(periodType) === 3) {
+    return getLastDateOfMonth(addMonths(start, 2));
+  }
+
+  return null;
+};
+
+// Fixed financial half-year cycles:
+// Cycle 1: Apr 1 -> Sep 30
+// Cycle 2: Oct 1 -> Mar 31 (next year)
+export const getSixMonthCycle = (date) => {
+  const d = toUtcStartOfDay(date);
+  if (!d) return null;
+
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth() + 1; // 1-12
+
+  if (month >= 4 && month <= 9) {
+    return {
+      startDate: new Date(Date.UTC(year, 3, 1)),
+      endDate: new Date(Date.UTC(year, 8, 30)),
+    };
+  }
+
+  if (month >= 10) {
+    return {
+      startDate: new Date(Date.UTC(year, 9, 1)),
+      endDate: new Date(Date.UTC(year + 1, 2, 31)),
+    };
+  }
+
+  return {
+    startDate: new Date(Date.UTC(year - 1, 9, 1)),
+    endDate: new Date(Date.UTC(year, 2, 31)),
+  };
+};
+
+// Returns the nearest financial cycle boundary end date for a given start date.
+// Jan-Mar  -> Mar 31 (same year)
+// Apr-Sep  -> Sep 30 (same year)
+// Oct-Dec  -> Mar 31 (next year)
+export const getSixMonthEndDate = (startDate) => {
+  const start = toUtcStartOfDay(startDate);
+  if (!start) return null;
+
+  const year = start.getUTCFullYear();
+  const month = start.getUTCMonth() + 1;
+
+  if (month >= 1 && month <= 3) {
+    return new Date(Date.UTC(year, 2, 31));
+  }
+
+  if (month >= 4 && month <= 9) {
+    return new Date(Date.UTC(year, 8, 30));
+  }
+
+  return new Date(Date.UTC(year + 1, 2, 31));
+};
+
+const getInitialSixMonthPeriod = (loanStartDate) => {
+  const start = toUtcStartOfDay(loanStartDate);
+  if (!start) return null;
+  const endDate = getSixMonthEndDate(start);
+  return {
+    startDate: start,
+    endDate,
+  };
+};
+
+// Hybrid six-month periods:
+// 1) first partial period from loan start to cycle boundary
+// 2) subsequent fixed cycles Apr-Sep and Oct-Mar
+export const getSixMonthPeriods = (loan, today = new Date()) => {
+  const loanStart = toUtcStartOfDay(loan?.disbursementDate || loan?.loanStartDate || loan);
+  const asOf = toUtcStartOfDay(today);
+  if (!loanStart || !asOf) return [];
+  if (asOf.getTime() < loanStart.getTime()) return [];
+
+  const first = getInitialSixMonthPeriod(loanStart);
+  if (!first) return [];
+
+  const periods = [
+    {
+      startDate: first.startDate,
+      endDate: first.endDate,
+    },
+  ];
+
+  if (asOf.getTime() <= first.endDate.getTime()) {
+    return periods;
+  }
+
+  let cursor = addDaysUtc(first.endDate, 1);
+  for (let i = 0; i < 2000; i += 1) {
+    if (!cursor) break;
+    const cycle = getSixMonthCycle(cursor);
+    if (!cycle) break;
+
+    periods.push({
+      startDate: cycle.startDate,
+      endDate: cycle.endDate,
+    });
+
+    if (asOf.getTime() <= cycle.endDate.getTime()) break;
+
+    cursor = addDaysUtc(cycle.endDate, 1);
+  }
+
+  return periods;
 };
 
 const halfYearCycleCandidatesUtc = (year) => [
@@ -95,6 +222,26 @@ export const getNextInterestPeriodUtc = ({ baseStartDate, lastPeriodEnd, cycleMo
   const base = toUtcStartOfDay(baseStartDate);
   if (!base) return null;
 
+  if (cycleMonths === 6) {
+    if (!lastPeriodEnd) {
+      const first = getInitialSixMonthPeriod(base);
+      if (!first) return null;
+      return {
+        periodStart: first.startDate,
+        periodEnd: first.endDate,
+      };
+    }
+
+    const refDate = addDaysUtc(lastPeriodEnd, 1);
+    if (!refDate) return null;
+    const cycle = getSixMonthCycle(refDate);
+    if (!cycle) return null;
+    return {
+      periodStart: cycle.startDate,
+      periodEnd: cycle.endDate,
+    };
+  }
+
   let periodStart = base;
   if (lastPeriodEnd) {
     const next = addDaysUtc(lastPeriodEnd, 1);
@@ -103,7 +250,7 @@ export const getNextInterestPeriodUtc = ({ baseStartDate, lastPeriodEnd, cycleMo
     periodStart = next.getTime() > base.getTime() ? next : base;
   }
 
-  const periodEnd = getNextCycleEndDateUtc(periodStart, cycleMonths);
+  const periodEnd = getPeriodEndDate(periodStart, cycleMonths) || getNextCycleEndDateUtc(periodStart, cycleMonths);
   if (!periodEnd) return null;
 
   return { periodStart, periodEnd };
@@ -156,18 +303,13 @@ export const getCurrentInterestPeriodUtc = ({ loanStartDate, cycleMonths, asOfDa
   }
 
   if (cycleMonths === 6) {
-    let lastPeriodEnd = null;
-    for (let i = 0; i < 2000; i += 1) {
-      const period = getNextInterestPeriodUtc({
-        baseStartDate: loanStart,
-        lastPeriodEnd,
-        cycleMonths,
-      });
-      if (!period) return null;
-      if (asOf.getTime() <= period.periodEnd.getTime()) return period;
-      lastPeriodEnd = period.periodEnd;
-    }
-    return null;
+    const periods = getSixMonthPeriods({ disbursementDate: loanStart }, asOf);
+    if (!periods.length) return null;
+    const current = periods[periods.length - 1];
+    return {
+      periodStart: current.startDate,
+      periodEnd: current.endDate,
+    };
   }
 
   return null;
@@ -180,6 +322,12 @@ export default {
   endOfMonthUtc,
   firstDayNextMonthUtc,
   getCurrentInterestPeriodUtc,
+  getLastDateOfMonth,
+  addMonths,
+  getPeriodEndDate,
+  getSixMonthCycle,
+  getSixMonthEndDate,
+  getSixMonthPeriods,
   getNextCycleEndDateUtc,
   calculatePeriodInterest,
   getNextInterestPeriodUtc,

@@ -23,6 +23,7 @@ const toInterestView = ({ record, loan }) => {
   return {
     _id: record._id,
     loanId: loan.loanId, // human-friendly loan id string
+    loanStartDate: loan.disbursementDate || null,
     borrowerName: fullName(loan.borrowerId),
     lenderName: isBorrowerRecord ? '' : fullName(record.lenderId),
     principal: record.principal ?? record.principalAmount,
@@ -56,6 +57,7 @@ const safeToInterestView = (record) => {
   return {
     _id: record?._id,
     loanId: record?.loanId?.loanId || record?.loanId?.toString?.() || '',
+    loanStartDate: record?.loanId?.disbursementDate || null,
     borrowerName: record?.loanId?.borrowerId ? fullName(record.loanId.borrowerId) : '',
     lenderName: isBorrowerRecord ? '' : fullName(record?.lenderId),
     principal,
@@ -111,7 +113,7 @@ export const getAllInterestRecords = async (req, res) => {
       InterestRecord.find()
         .populate({
           path: 'loanId',
-          select: 'loanId totalLoanAmount interestRateAnnual borrowerId',
+          select: 'loanId disbursementDate totalLoanAmount interestRateAnnual borrowerId',
           populate: { path: 'borrowerId', select: 'name surname' },
         })
         .populate('lenderId', 'name surname familyGroup')
@@ -212,7 +214,7 @@ export const getPendingInterest = async (req, res) => {
     const records = await InterestRecord.find(match)
       .populate({
         path: 'loanId',
-        select: 'loanId totalLoanAmount interestRateAnnual borrowerId',
+        select: 'loanId disbursementDate totalLoanAmount interestRateAnnual borrowerId',
         populate: {
           path: 'borrowerId',
           select: 'name surname',
@@ -431,7 +433,7 @@ export const getInterestRecordsByLoan = async (req, res) => {
       return res.status(404).json({ message: 'Loan not found' });
     }
 
-    await generateCurrentPeriodInterest({ loan: loan.toObject(), asOf: new Date(), replaceExisting: true });
+    await generateCurrentPeriodInterest({ loan: loan.toObject(), asOf: new Date(), replaceExisting: false });
 
     const records = await InterestRecord.find({ loanId: loan._id })
       .populate('lenderId', 'name surname')
