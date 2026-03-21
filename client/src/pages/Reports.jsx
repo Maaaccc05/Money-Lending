@@ -1,18 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar, Navbar } from '../components/index';
-import { reportAPI, borrowerAPI, lenderAPI } from '../services/api';
+import { reportAPI } from '../services/api';
 import { AlertCircle, Download } from 'lucide-react';
 
 export const Reports = () => {
-  const [reportType, setReportType] = useState('current-loans');
-  const [borrowerList, setBorrowerList] = useState([]);
-  const [lenderList, setLenderList] = useState([]);
+  const [activeReport, setActiveReport] = useState('current-loans');
   const [reportData, setReportData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [borrowers, setBorrowers] = useState([]);
-  const [lenders, setLenders] = useState([]);
-  const [selectedFilter, setSelectedFilter] = useState('');
+
+  useEffect(() => {
+    fetchReportData(activeReport);
+  }, [activeReport]);
 
   const normalizeDataArray = (payload) => {
     if (!payload) return [];
@@ -38,32 +37,10 @@ export const Reports = () => {
         case 'loans-by-borrower':
           ({ data } = await reportAPI.getLoansByBorrower());
           setReportData(normalizeDataArray(data));
-          // Fetch borrowers for filter (safe)
-          try {
-            const res = await borrowerAPI.getAll(1, 100);
-            const list = res?.data?.borrowers || [];
-            setBorrowerList(Array.isArray(list) ? list : []);
-            setBorrowers(Array.isArray(list) ? list : []);
-          } catch (err) {
-            console.error(err);
-            setBorrowerList([]);
-            setBorrowers([]);
-          }
           break;
-        case 'loans-by-lender':
+        case 'lender-contributions':
           ({ data } = await reportAPI.getLoansByLender());
           setReportData(normalizeDataArray(data));
-          // Fetch lenders for filter (safe)
-          try {
-            const res = await lenderAPI.getAll(1, 100);
-            const list = res?.data?.lenders || [];
-            setLenderList(Array.isArray(list) ? list : []);
-            setLenders(Array.isArray(list) ? list : []);
-          } catch (err) {
-            console.error(err);
-            setLenderList([]);
-            setLenders([]);
-          }
           break;
         case 'pending-interest':
           ({ data } = await reportAPI.getPendingInterest());
@@ -82,15 +59,14 @@ export const Reports = () => {
   };
 
   const handleReportTypeChange = (type) => {
-    setReportType(type);
-    fetchReportData(type);
+    setActiveReport(type);
   };
 
   const downloadReport = () => {
     const csv = generateCSV();
     const element = document.createElement('a');
     element.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv));
-    element.setAttribute('download', `report-${reportType}-${Date.now()}.csv`);
+    element.setAttribute('download', `report-${activeReport}-${Date.now()}.csv`);
     element.style.display = 'none';
     document.body.appendChild(element);
     element.click();
@@ -101,7 +77,7 @@ export const Reports = () => {
     let headers = [];
     let rows = [];
 
-    switch (reportType) {
+    switch (activeReport) {
       case 'current-loans':
         headers = ['Loan ID', 'Borrower', 'Amount', 'Interest Rate', 'Status', 'Lenders Count', 'Pending Interest'];
         rows = reportData.map((loan) => [
@@ -125,18 +101,20 @@ export const Reports = () => {
         break;
 
       case 'loans-by-borrower':
-        headers = ['Borrower', 'Total Loans', 'Total Amount'];
+        headers = ['Borrower', 'Family Group', 'Total Loans', 'Total Amount'];
         rows = (reportData || []).map((g) => [
           `${g?.borrower?.name || ''} ${g?.borrower?.surname || ''}`.trim() || 'Unknown',
+          g?.borrower?.familyGroup || 'Other Family',
           g?.totalLoans || 0,
           g?.totalAmount || 0,
         ]);
         break;
 
-      case 'loans-by-lender':
-        headers = ['Lender', 'Loans Total', 'Total Contributed'];
+      case 'lender-contributions':
+        headers = ['Lender', 'Family Group', 'Loans Total', 'Total Contributed'];
         rows = (reportData || []).map((g) => [
           `${g?.lender?.name || ''} ${g?.lender?.surname || ''}`.trim() || 'Unknown',
+          g?.lender?.familyGroup || 'Other Family',
           g?.loansTotal || 0,
           g?.totalContributed || 0,
         ]);
@@ -183,14 +161,14 @@ export const Reports = () => {
               {[
                 { value: 'current-loans', label: 'Current Loans' },
                 { value: 'loans-by-borrower', label: 'Loans by Borrower' },
-                { value: 'loans-by-lender', label: 'Loans by Lender' },
+                { value: 'lender-contributions', label: 'Lender Contributions' },
                 { value: 'pending-interest', label: 'Pending Interest' },
               ].map((option) => (
                 <button
                   key={option.value}
                   onClick={() => handleReportTypeChange(option.value)}
                   className={`px-4 py-2 rounded-lg font-medium transition ${
-                    reportType === option.value
+                    activeReport === option.value
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
                   }`}
@@ -210,7 +188,7 @@ export const Reports = () => {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b">
                     <tr>
-                      {reportType === 'current-loans' && (
+                      {activeReport === 'current-loans' && (
                         <>
                           <th className="px-6 py-3 text-left text-sm font-semibold">Loan ID</th>
                           <th className="px-6 py-3 text-left text-sm font-semibold">Borrower</th>
@@ -220,7 +198,7 @@ export const Reports = () => {
                           <th className="px-6 py-3 text-left text-sm font-semibold">Pending Interest</th>
                         </>
                       )}
-                      {reportType === 'pending-interest' && (
+                      {activeReport === 'pending-interest' && (
                         <>
                           <th className="px-6 py-3 text-left text-sm font-semibold">Lender</th>
                           <th className="px-6 py-3 text-left text-sm font-semibold">Total Pending</th>
@@ -228,17 +206,19 @@ export const Reports = () => {
                         </>
                       )}
 
-                      {reportType === 'loans-by-borrower' && (
+                      {activeReport === 'loans-by-borrower' && (
                         <>
                           <th className="px-6 py-3 text-left text-sm font-semibold">Borrower</th>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Family Group</th>
                           <th className="px-6 py-3 text-left text-sm font-semibold">Total Loans</th>
                           <th className="px-6 py-3 text-left text-sm font-semibold">Total Amount</th>
                         </>
                       )}
 
-                      {reportType === 'loans-by-lender' && (
+                      {activeReport === 'lender-contributions' && (
                         <>
                           <th className="px-6 py-3 text-left text-sm font-semibold">Lender</th>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Family Group</th>
                           <th className="px-6 py-3 text-left text-sm font-semibold">Loans Total</th>
                           <th className="px-6 py-3 text-left text-sm font-semibold">Total Contributed</th>
                         </>
@@ -246,7 +226,7 @@ export const Reports = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {reportType === 'current-loans' &&
+                    {activeReport === 'current-loans' &&
                       (reportData || []).map((loan) => (
                         <tr key={loan._id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 text-sm">{loan.loanId}</td>
@@ -273,7 +253,7 @@ export const Reports = () => {
                         </tr>
                       ))}
 
-                    {reportType === 'pending-interest' &&
+                    {activeReport === 'pending-interest' &&
                       (reportData || []).map((item, idx) => (
                         <tr key={idx} className="hover:bg-gray-50">
                           <td className="px-6 py-4 text-sm">
@@ -286,23 +266,25 @@ export const Reports = () => {
                         </tr>
                       ))}
 
-                    {reportType === 'loans-by-borrower' &&
+                    {activeReport === 'loans-by-borrower' &&
                       (reportData || []).map((g) => (
                         <tr key={g?._id || Math.random()} className="hover:bg-gray-50">
                           <td className="px-6 py-4 text-sm">
                             {(`${g?.borrower?.name || ''} ${g?.borrower?.surname || ''}`.trim()) || 'Unknown'}
                           </td>
+                          <td className="px-6 py-4 text-sm">{g?.borrower?.familyGroup || 'Other Family'}</td>
                           <td className="px-6 py-4 text-sm">{g?.totalLoans || 0}</td>
                           <td className="px-6 py-4 text-sm font-semibold">₹{Number(g?.totalAmount || 0).toLocaleString()}</td>
                         </tr>
                       ))}
 
-                    {reportType === 'loans-by-lender' &&
+                    {activeReport === 'lender-contributions' &&
                       (reportData || []).map((g) => (
                         <tr key={g?._id || Math.random()} className="hover:bg-gray-50">
                           <td className="px-6 py-4 text-sm">
                             {(`${g?.lender?.name || ''} ${g?.lender?.surname || ''}`.trim()) || 'Unknown'}
                           </td>
+                          <td className="px-6 py-4 text-sm">{g?.lender?.familyGroup || 'Other Family'}</td>
                           <td className="px-6 py-4 text-sm">{g?.loansTotal || 0}</td>
                           <td className="px-6 py-4 text-sm font-semibold">₹{Number(g?.totalContributed || 0).toLocaleString()}</td>
                         </tr>

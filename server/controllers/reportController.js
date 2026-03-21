@@ -17,7 +17,10 @@ const ACTIVE_LENDER_LOAN_MATCH = {
 
 export const getCurrentLoans = async (req, res) => {
   try {
-    const loans = await Loan.find({ status: { $in: ACTIVE_STATUSES } })
+    const loans = await Loan.find({
+      status: { $in: ACTIVE_STATUSES },
+      ...ACTIVE_LENDER_LOAN_MATCH,
+    })
       .populate('borrowerId', 'name surname')
       .populate('lenders.lenderId', 'name surname familyGroup')
       .sort({ createdAt: -1 });

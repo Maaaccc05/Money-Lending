@@ -212,13 +212,12 @@ const FamilyGroupSection = ({ groupName, lenders, onEdit, onDelete }) => {
           {/* ── Mobile: card list (hidden on sm+) ── */}
           <div className="divide-y divide-gray-100 sm:hidden">
             {lenders.map((l) => (
-              <div key={l._id} className="px-4 py-3 flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
+              <div key={l._id} className="px-4 py-3">
+                <div className="min-w-0">
                   <p className="font-semibold text-gray-900 text-sm">{l.name} {l.surname}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{l.bankName} · {l.branch}</p>
-                  <p className="text-xs text-gray-400 mt-0.5 truncate">{l.address}</p>
                 </div>
-                <div className="shrink-0 flex items-center gap-2">
+                <div className="mt-3 flex items-center gap-2">
                   <button
                     onClick={() => onEdit(l)}
                     className="inline-flex items-center justify-center gap-1 text-xs min-w-[72px] h-8 bg-purple-100 text-purple-700 px-2.5 rounded-lg hover:bg-purple-200 font-medium transition"
@@ -238,27 +237,25 @@ const FamilyGroupSection = ({ groupName, lenders, onEdit, onDelete }) => {
 
           {/* ── Desktop: table (hidden below sm) ── */}
           <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full table-fixed">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">DOB</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Bank</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Branch</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Address</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+                  <th className="w-[28%] px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+                  <th className="w-[16%] px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">DOB</th>
+                  <th className="w-[18%] px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Bank</th>
+                  <th className="w-[16%] px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Branch</th>
+                  <th className="w-[22%] px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {lenders.map((l) => (
                   <tr key={l._id} className="hover:bg-purple-50/30 transition-colors">
-                    <td className="px-6 py-3.5 text-sm font-medium text-gray-900">{l.name} {l.surname}</td>
-                    <td className="px-6 py-3.5 text-sm text-gray-600">{new Date(l.dob).toLocaleDateString('en-IN')}</td>
-                    <td className="px-6 py-3.5 text-sm text-gray-600">{l.bankName}</td>
-                    <td className="px-6 py-3.5 text-sm text-gray-600">{l.branch}</td>
-                    <td className="px-6 py-3.5 text-sm text-gray-600 max-w-xs truncate">{l.address}</td>
-                    <td className="px-6 py-3.5">
-                      <div className="flex items-center gap-2">
+                    <td className="px-6 py-3.5 text-sm font-medium text-gray-900 truncate">{l.name} {l.surname}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600 whitespace-nowrap">{new Date(l.dob).toLocaleDateString('en-IN')}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600 truncate">{l.bankName}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600 truncate">{l.branch}</td>
+                    <td className="px-6 py-3.5 align-middle">
+                      <div className="flex items-center justify-start gap-2">
                         <button
                           onClick={() => onEdit(l)}
                           className="inline-flex items-center justify-center gap-1.5 text-xs min-w-[80px] h-8 bg-purple-100 text-purple-700 px-3 rounded-lg hover:bg-purple-200 font-medium transition"
