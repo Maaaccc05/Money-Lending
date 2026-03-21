@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar, Navbar } from '../components/index';
 import { reportAPI } from '../services/api';
 import { AlertCircle, Download } from 'lucide-react';
@@ -8,6 +8,7 @@ export const Reports = () => {
   const [reportData, setReportData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const activeRequestRef = useRef(0);
 
   useEffect(() => {
     fetchReportData(activeReport);
@@ -23,6 +24,9 @@ export const Reports = () => {
   };
 
   const fetchReportData = async (type) => {
+    const requestId = Date.now();
+    activeRequestRef.current = requestId;
+
     setIsLoading(true);
     setError('');
     // Always keep UI safe
@@ -49,11 +53,16 @@ export const Reports = () => {
         default:
           break;
       }
+
+      // Ignore stale responses from previous tab requests.
+      if (activeRequestRef.current !== requestId) return;
     } catch (err) {
+      if (activeRequestRef.current !== requestId) return;
       setError('Failed to fetch report data');
       console.error(err);
       setReportData([]);
     } finally {
+      if (activeRequestRef.current !== requestId) return;
       setIsLoading(false);
     }
   };
@@ -233,7 +242,7 @@ export const Reports = () => {
                           <td className="px-6 py-4 text-sm">
                             {loan.borrowerId?.name} {loan.borrowerId?.surname}
                           </td>
-                          <td className="px-6 py-4 text-sm">₹{loan.totalLoanAmount.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm">₹{Number(loan.totalLoanAmount || 0).toLocaleString('en-IN')}</td>
                           <td className="px-6 py-4 text-sm">{loan.interestRateAnnual}%</td>
                           <td className="px-6 py-4 text-sm">
                             <span
