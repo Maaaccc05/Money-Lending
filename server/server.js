@@ -33,21 +33,26 @@ startReceiptCronJob();
 app.use(helmet());
 
 // CORS configuration
-// app.use(
-//   cors({
-//     origin: process.env.NODE_ENV === 'production' ? 'http://localhost:5173' : true,
-//     credentials: true,
-//   })
-// );
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "https://money-lending-alpha.vercel.app"
-    ],
-    credentials: true,
-  })
-);
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://money-lending-alpha.vercel.app',
+  'https://money-lending-git-main-mackam30-gmailcoms-projects.vercel.app',
+].filter(Boolean);
+
+const corsOptions = {
+  origin(origin, callback) {
+    // Allow server-to-server and CLI requests (no Origin header)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
