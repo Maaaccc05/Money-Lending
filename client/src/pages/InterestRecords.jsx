@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar, Navbar } from '../components/index';
 import { interestAPI } from '../services/api';
 import { AlertCircle, Download, Eye, X } from 'lucide-react';
@@ -48,7 +48,6 @@ const StatusBadge = ({ status }) => {
 };
 
 export const InterestRecords = () => {
-  const [view, setView] = useState('borrower');
   const [interests, setInterests] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -59,45 +58,23 @@ export const InterestRecords = () => {
   const [detailsError, setDetailsError] = useState('');
   const [detailsData, setDetailsData] = useState(null);
   const [csvLoadingLenderId, setCsvLoadingLenderId] = useState(null);
+  const [markingPaidRecordId, setMarkingPaidRecordId] = useState(null);
 
   useEffect(() => {
     fetchPendingInterest();
-  }, [page, view]);
-
-  useEffect(() => {
-    // Switching views should start from page 1 to avoid empty pages.
-    setPage(1);
-  }, [view]);
+  }, [page]);
 
   const fetchPendingInterest = async () => {
     setIsLoading(true);
     setError('');
     try {
-      const scope = view === 'borrower' ? 'borrower' : 'lender';
-      const { data } = await interestAPI.getPending(page, 10, scope);
+      const { data } = await interestAPI.getPending(page, 10, 'borrower');
       setInterests(data.records);
       setPagination(data.pagination);
     } catch (err) {
       setError('Failed to fetch interest records');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleMarkPaid = async (recordId) => {
-    try {
-      const record = interests.find((i) => i._id === recordId);
-      if (!record) return;
-
-      await interestAPI.recordPayment({
-        interestRecordId: recordId,
-        amountPaid: record.interestAmount,
-        paymentDate: new Date().toISOString().split('T')[0],
-      });
-
-      await fetchPendingInterest();
-    } catch (err) {
-      setError('Failed to record interest payment');
     }
   };
 
@@ -123,6 +100,7 @@ export const InterestRecords = () => {
     setDetailsError('');
     setDetailsData(null);
     setCsvLoadingLenderId(null);
+    setMarkingPaidRecordId(null);
   };
 
   const handleDownloadCsv = async (lender) => {
@@ -142,15 +120,33 @@ export const InterestRecords = () => {
     }
   };
 
-  const borrowerRows = useMemo(
-    () => interests.filter((r) => !r.lenderName).map((r) => ({
-      ...r,
-      totalLoanAmount: r.totalLoanAmount ?? r.principal,
-    })),
-    [interests]
-  );
+  const handleMarkLenderPaidFromModal = async (lender) => {
+    if (!lender?.interestRecordId || lender?.interestStatus !== 'pending') return;
 
-  const lenderRows = useMemo(() => interests.filter((r) => r.lenderName), [interests]);
+    setMarkingPaidRecordId(lender.interestRecordId);
+    setDetailsError('');
+
+    try {
+      await interestAPI.markLenderRecordPaid(lender.interestRecordId);
+
+      // Remove settled lender row instantly from the modal list.
+      setDetailsData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          lenderBreakdown: (prev.lenderBreakdown || []).filter(
+            (row) => row.interestRecordId !== lender.interestRecordId
+          ),
+        };
+      });
+
+      await fetchPendingInterest();
+    } catch (err) {
+      setDetailsError(err?.response?.data?.message || 'Failed to mark lender interest as paid');
+    } finally {
+      setMarkingPaidRecordId(null);
+    }
+  };
 
   const canPrev = pagination?.page > 1;
   const canNext = pagination?.page < pagination?.pages;
@@ -165,31 +161,6 @@ export const InterestRecords = () => {
         <div className="pt-20 px-4 sm:px-6 lg:px-8 py-6 bg-gray-50 min-h-screen w-full max-w-full">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-4">Interest Records</h1>
 
-          <div className="flex gap-2 mb-6">
-            <button
-              type="button"
-              onClick={() => setView('borrower')}
-              className={`px-4 py-2 rounded-md text-sm font-semibold border ${
-                view === 'borrower'
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              Borrower Interest
-            </button>
-            <button
-              type="button"
-              onClick={() => setView('lender')}
-              className={`px-4 py-2 rounded-md text-sm font-semibold border ${
-                view === 'lender'
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              Lender Interest
-            </button>
-          </div>
-
           {error && (
             <div className="bg-red-100 text-red-700 p-4 rounded mb-6 flex items-center gap-2">
               <AlertCircle size={20} />
@@ -199,90 +170,38 @@ export const InterestRecords = () => {
 
           {isLoading ? (
             <div className="text-center py-12">Loading interest records...</div>
-          ) : (view === 'borrower' ? borrowerRows : lenderRows).length > 0 ? (
+          ) : interests.length > 0 ? (
             <div className="bg-white rounded-lg shadow overflow-hidden">
               <div className="px-6 py-4 border-b bg-white">
-                <h2 className="text-lg font-semibold text-gray-800">
-                  {view === 'borrower' ? 'Borrower Interest Records' : 'Lender Interest Records'}
-                </h2>
+                <h2 className="text-lg font-semibold text-gray-800">Interest Records</h2>
               </div>
 
               <div className="overflow-x-auto">
-                {view === 'borrower' ? (
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Loan ID</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Borrower Name</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Total Loan Amount</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Borrower Interest</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Period Start Date</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">End Date</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {borrowerRows.map((row) => (
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Loan ID</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Borrower Name</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Loan Amount</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Interest</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Rate</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Period Start Date</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">End Date</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {interests.map((row) => {
+                      const interestAmount = row.borrowerInterest ?? row.interestAmount;
+                      const loanAmount = row.totalLoanAmount ?? row.principal ?? row.principalAmount;
+
+                      return (
                         <tr key={row._id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 text-sm text-gray-900">{row.loanId}</td>
                           <td className="px-6 py-4 text-sm text-gray-900">{row.borrowerName || '-'}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{formatINR(row.totalLoanAmount)}</td>
-                          <td className="px-6 py-4 text-sm font-semibold text-gray-900">{formatINR(row.borrowerInterest)}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{formatDate(row.startDate)}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{formatDate(row.endDate)}</td>
-                          <td className="px-6 py-4 text-sm">
-                            <StatusBadge status={row.status} />
-                          </td>
-                          <td className="px-6 py-4 text-sm">
-                            <div className="flex items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={() => handleViewDetails(row._id)}
-                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-semibold"
-                              >
-                                <Eye size={14} />
-                                View Details
-                              </button>
-                              {String(row.status || '').toLowerCase() === 'pending' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleMarkPaid(row._id)}
-                                  className="text-green-600 hover:text-green-800 text-xs font-semibold"
-                                >
-                                  Mark Paid
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Loan ID</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Lender Name</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Borrower Name</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Principal</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Lender Interest</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Rate</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Period Start Date</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">End Date</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {lenderRows.map((row) => (
-                        <tr key={row._id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 text-sm text-gray-900">{row.loanId}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{row.lenderName || '-'}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{row.borrowerName || '-'}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{formatINR(row.principal)}</td>
-                          <td className="px-6 py-4 text-sm font-semibold text-gray-900">{formatINR(row.lenderInterest)}</td>
+                          <td className="px-6 py-4 text-sm text-gray-900">{formatINR(loanAmount)}</td>
+                          <td className="px-6 py-4 text-sm font-semibold text-gray-900">{formatINR(interestAmount)}</td>
                           <td className="px-6 py-4 text-sm text-gray-900">{row.rate ?? '-'}%</td>
                           <td className="px-6 py-4 text-sm text-gray-900">{formatDate(row.startDate)}</td>
                           <td className="px-6 py-4 text-sm text-gray-900">{formatDate(row.endDate)}</td>
@@ -290,31 +209,20 @@ export const InterestRecords = () => {
                             <StatusBadge status={row.status} />
                           </td>
                           <td className="px-6 py-4 text-sm">
-                            <div className="flex items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={() => handleViewDetails(row._id)}
-                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-semibold"
-                              >
-                                <Eye size={14} />
-                                View Details
-                              </button>
-                              {String(row.status || '').toLowerCase() === 'pending' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleMarkPaid(row._id)}
-                                  className="text-green-600 hover:text-green-800 text-xs font-semibold"
-                                >
-                                  Mark Paid
-                                </button>
-                              )}
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleViewDetails(row._id)}
+                              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-semibold"
+                            >
+                              <Eye size={14} />
+                              View Details
+                            </button>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               {pagination && (
@@ -420,25 +328,45 @@ export const InterestRecords = () => {
                         </thead>
                         <tbody className="divide-y">
                           {(detailsData?.lenderBreakdown || []).map((lender) => (
-                            <tr key={lender.lenderId || lender.lenderName}>
+                            <tr key={lender.interestRecordId || lender.lenderId || lender.lenderName}>
                               <td className="px-4 py-3 text-gray-900">{lender.lenderName || '-'}</td>
                               <td className="px-4 py-3 text-gray-900">{formatINR(lender.contributionAmount)}</td>
                               <td className="px-4 py-3 font-semibold text-gray-900">{formatINR(lender.interestShare)}</td>
-                              <td className="px-4 py-3 text-gray-700 capitalize">{lender.lenderStatus || '-'}</td>
                               <td className="px-4 py-3">
-                                <button
-                                  type="button"
-                                  disabled={!lender.canDownloadCsv || csvLoadingLenderId === lender.lenderId}
-                                  onClick={() => handleDownloadCsv(lender)}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border ${
-                                    lender.canDownloadCsv
-                                      ? 'border-blue-200 text-blue-700 hover:bg-blue-50'
-                                      : 'border-gray-200 text-gray-400 cursor-not-allowed'
-                                  }`}
-                                >
-                                  <Download size={13} />
-                                  {csvLoadingLenderId === lender.lenderId ? 'Downloading...' : 'Download CSV'}
-                                </button>
+                                <StatusBadge status={lender.interestStatus || lender.lenderStatus || '-'} />
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={!lender.canDownloadCsv || csvLoadingLenderId === lender.lenderId}
+                                    onClick={() => handleDownloadCsv(lender)}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border ${
+                                      lender.canDownloadCsv
+                                        ? 'border-blue-200 text-blue-700 hover:bg-blue-50'
+                                        : 'border-gray-200 text-gray-400 cursor-not-allowed'
+                                    }`}
+                                  >
+                                    <Download size={13} />
+                                    {csvLoadingLenderId === lender.lenderId ? 'Downloading...' : 'Download CSV'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      lender.interestStatus !== 'pending'
+                                      || !lender.interestRecordId
+                                      || markingPaidRecordId === lender.interestRecordId
+                                    }
+                                    onClick={() => handleMarkLenderPaidFromModal(lender)}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border ${
+                                      lender.interestStatus === 'pending' && lender.interestRecordId
+                                        ? 'border-green-200 text-green-700 hover:bg-green-50'
+                                        : 'border-gray-200 text-gray-400 cursor-not-allowed'
+                                    }`}
+                                  >
+                                    {markingPaidRecordId === lender.interestRecordId ? 'Marking...' : 'Mark Paid'}
+                                  </button>
+                                </div>
                                 {!lender.canDownloadCsv && (
                                   <p className="mt-1 text-xs text-red-600">
                                     Missing: {(lender.missingFields || []).join(', ')}

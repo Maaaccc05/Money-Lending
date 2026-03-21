@@ -1,4 +1,5 @@
 import Borrower from '../models/Borrower.js';
+import Loan from '../models/Loan.js';
 
 export const createBorrower = async (req, res) => {
   try {
@@ -141,6 +142,35 @@ export const searchBorrowers = async (req, res) => {
   }
 };
 
+export const deleteBorrower = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const borrower = await Borrower.findById(id).select('_id');
+    if (!borrower) {
+      return res.status(404).json({ message: 'Borrower not found' });
+    }
+
+    const hasActiveLoans = await Loan.exists({
+      borrowerId: id,
+      lenders: {
+        $elemMatch: {
+          status: { $ne: 'closed' },
+        },
+      },
+    });
+
+    if (hasActiveLoans) {
+      return res.status(400).json({ message: 'Cannot delete borrower with active loans' });
+    }
+
+    await Borrower.deleteOne({ _id: id });
+    return res.status(200).json({ message: 'Borrower deleted successfully' });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 export default {
   createBorrower,
   getBorrowers,
@@ -148,4 +178,5 @@ export default {
   getBorrowerById,
   updateBorrower,
   searchBorrowers,
+  deleteBorrower,
 };

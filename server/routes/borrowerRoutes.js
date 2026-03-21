@@ -75,4 +75,11 @@ router.put(
   borrowerController.updateBorrower
 );
 
+router.delete(
+  '/:id',
+  [param('id').isMongoId().withMessage('Invalid borrower ID')],
+  handleValidationErrors,
+  borrowerController.deleteBorrower
+);
+
 export default router;

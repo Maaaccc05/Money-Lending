@@ -25,4 +25,11 @@ router.get(
   interestController.downloadInterestRecordCsv
 );
 
+router.patch(
+  '/:lenderId/mark-paid',
+  [param('lenderId').isMongoId().withMessage('Invalid lender interest record ID')],
+  handleValidationErrors,
+  interestController.markLenderInterestRecordPaid
+);
+
 export default router;

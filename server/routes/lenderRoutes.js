@@ -75,4 +75,11 @@ router.put(
   lenderController.updateLender
 );
 
+router.delete(
+  '/:id',
+  [param('id').isMongoId().withMessage('Invalid lender ID')],
+  handleValidationErrors,
+  lenderController.deleteLender
+);
+
 export default router;

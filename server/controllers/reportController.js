@@ -1,10 +1,19 @@
 import Loan from '../models/Loan.js';
+import Borrower from '../models/Borrower.js';
+import Lender from '../models/Lender.js';
 import InterestRecord from '../models/InterestRecord.js';
 import InterestPayment from '../models/InterestPayment.js';
 import dayjs from 'dayjs';
 import mongoose from 'mongoose';
 
 const ACTIVE_STATUSES = ['PARTIALLY_FUNDED', 'FULLY_FUNDED', 'PENDING'];
+const ACTIVE_LENDER_LOAN_MATCH = {
+  lenders: {
+    $elemMatch: {
+      status: { $ne: 'closed' },
+    },
+  },
+};
 
 export const getCurrentLoans = async (req, res) => {
   try {
@@ -231,72 +240,64 @@ export const getPendingInterestReport = async (req, res) => {
 
 export const getDashboardStats = async (req, res) => {
   try {
-    const totalBorrowers = await Loan.distinct('borrowerId');
-    const totalLenders = await Loan.distinct('lenders.lenderId');
-    const activeLoans = await Loan.countDocuments({
-      $and: [
-        { status: { $in: ACTIVE_STATUSES } },
-        { loanStatus: { $ne: 'CLOSED' } },
-      ],
-    });
-    const closedLoans = await Loan.countDocuments({
-      $or: [{ status: 'CLOSED' }, { loanStatus: 'CLOSED' }],
-    });
-
-    const loanAmounts = await Loan.aggregate([
-      {
-        $group: {
-          _id: null,
-          totalLoanAmount: { $sum: '$totalLoanAmount' },
-        },
-      },
-    ]);
-
-    const pendingInterest = await InterestRecord.aggregate([
-      {
-        $match: { status: 'pending', lenderId: { $ne: null } },
-      },
-      {
-        $group: {
-          _id: null,
-          totalPending: { $sum: '$interestAmount' },
-        },
-      },
-    ]);
-
-    const collectedInterest = await InterestPayment.aggregate([
-      {
-        $group: {
-          _id: null,
-          totalCollected: { $sum: { $ifNull: ['$amountReceived', '$amountPaid'] } },
-        },
-      },
-    ]);
-
-    const monthlyCollection = await InterestPayment.aggregate([
-      {
-        $group: {
-          _id: {
-            $dateToString: {
-              format: '%Y-%m',
-              date: '$paymentDate',
-            },
+    const [
+      totalLoans,
+      totalBorrowers,
+      totalLenders,
+      activeLoans,
+      loanPortfolioAgg,
+      pendingInterest,
+      monthlyCollection,
+    ] = await Promise.all([
+      Loan.countDocuments(),
+      Borrower.countDocuments(),
+      Lender.countDocuments(),
+      Loan.countDocuments(ACTIVE_LENDER_LOAN_MATCH),
+      Loan.aggregate([
+        { $match: ACTIVE_LENDER_LOAN_MATCH },
+        {
+          $group: {
+            _id: null,
+            loanPortfolio: { $sum: '$totalLoanAmount' },
           },
-          amount: { $sum: { $ifNull: ['$amountReceived', '$amountPaid'] } },
         },
-      },
-      { $sort: { _id: 1 } },
+      ]),
+      InterestRecord.aggregate([
+        {
+          $match: { status: 'pending', lenderId: { $ne: null } },
+        },
+        {
+          $group: {
+            _id: null,
+            totalPending: { $sum: '$interestAmount' },
+          },
+        },
+      ]),
+      InterestPayment.aggregate([
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: '%Y-%m',
+                date: '$paymentDate',
+              },
+            },
+            amount: { $sum: { $ifNull: ['$amountReceived', '$amountPaid'] } },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
     ]);
 
     res.status(200).json({
       stats: {
-        totalBorrowers: totalBorrowers.length,
-        totalLenders: totalLenders.length,
+        totalLoans,
+        totalBorrowers,
+        totalLenders,
         activeLoans,
-        closedLoans,
-        totalLoanAmount: loanAmounts[0]?.totalLoanAmount || 0,
+        loanPortfolio: loanPortfolioAgg[0]?.loanPortfolio ?? 0,
+        totalLoanAmount: loanPortfolioAgg[0]?.loanPortfolio ?? 0,
         pendingInterest: pendingInterest[0]?.totalPending || 0,
-        collectedInterest: collectedInterest[0]?.totalCollected || 0,
       },
       monthlyCollection,
     });

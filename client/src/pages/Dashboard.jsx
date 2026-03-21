@@ -3,6 +3,12 @@ import { Sidebar, Navbar } from '../components/index';
 import { reportAPI } from '../services/api';
 import { TrendingUp, Users, Landmark, DollarSign, AlertCircle } from 'lucide-react';
 
+const formatINR = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '₹0';
+  return `₹${n.toLocaleString('en-IN')}`;
+};
+
 export const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -49,9 +55,7 @@ export const Dashboard = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-gray-600 text-sm">Total Loans</p>
-                      <p className="text-3xl font-bold text-gray-800">
-                        {stats.activeLoans + stats.closedLoans}
-                      </p>
+                      <p className="text-3xl font-bold text-gray-800">{stats.totalLoans}</p>
                     </div>
                     <TrendingUp size={32} className="text-blue-600" />
                   </div>
@@ -91,23 +95,9 @@ export const Dashboard = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-gray-600 text-sm">Loan Portfolio</p>
-                      <p className="text-2xl font-bold text-gray-800">
-                        ₹{(stats.totalLoanAmount / 100000).toFixed(1)}L
-                      </p>
+                      <p className="text-2xl font-bold text-gray-800">{formatINR(stats.loanPortfolio)}</p>
                     </div>
                     <DollarSign size={32} className="text-green-600" />
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-lg shadow p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-600 text-sm">Interest Collected</p>
-                      <p className="text-2xl font-bold text-gray-800">
-                        ₹{(stats.collectedInterest / 1000).toFixed(1)}K
-                      </p>
-                    </div>
-                    <DollarSign size={32} className="text-blue-600" />
                   </div>
                 </div>
 
@@ -115,21 +105,9 @@ export const Dashboard = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-gray-600 text-sm">Pending Interest</p>
-                      <p className="text-2xl font-bold text-orange-600">
-                        ₹{(stats.pendingInterest / 1000).toFixed(1)}K
-                      </p>
+                      <p className="text-2xl font-bold text-orange-600">{formatINR(stats.pendingInterest)}</p>
                     </div>
                     <AlertCircle size={32} className="text-orange-600" />
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-lg shadow p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-600 text-sm">Closed Loans</p>
-                      <p className="text-3xl font-bold text-gray-800">{stats.closedLoans}</p>
-                    </div>
-                    <TrendingUp size={32} className="text-gray-600" />
                   </div>
                 </div>
               </div>

@@ -27,23 +27,13 @@ const getPeriodBounds = (record) => ({
   periodEnd: asDate(record.periodEnd || record.endDate),
 });
 
-const findMatchingLenderRecord = ({ lenderRecords, lenderId, periodStart, periodEnd }) => {
-  const lenderIdStr = lenderId?.toString?.();
-  if (!lenderIdStr) return null;
-
-  return (
-    lenderRecords.find((record) => {
-      const recordLenderId = record?.lenderId?._id?.toString?.() || record?.lenderId?.toString?.();
-      if (recordLenderId !== lenderIdStr) return false;
-
-      const bounds = getPeriodBounds(record);
-      return sameUtcDate(bounds.periodStart, periodStart) && sameUtcDate(bounds.periodEnd, periodEnd);
-    }) || null
-  );
+const samePeriod = (record, periodStart, periodEnd) => {
+  const bounds = getPeriodBounds(record);
+  return sameUtcDate(bounds.periodStart, periodStart) && sameUtcDate(bounds.periodEnd, periodEnd);
 };
 
 const toBreakdownRow = ({ loanEntry, lenderRecord }) => {
-  const lender = loanEntry?.lenderId;
+  const lender = lenderRecord?.lenderId || loanEntry?.lenderId;
   const accountNo = lender?.bankAccountNumber || '';
   const ifscCode = lender?.ifscCode || '';
   const bankName = lender?.bankName || '';
@@ -54,11 +44,13 @@ const toBreakdownRow = ({ loanEntry, lenderRecord }) => {
   if (!bankName) missingFields.push('Bank Name');
 
   return {
+    interestRecordId: lenderRecord?._id || null,
     lenderId: lender?._id || null,
     lenderName: fullName(lender),
-    contributionAmount: Number(loanEntry?.amountContributed || 0),
+    contributionAmount: Number(loanEntry?.amountContributed ?? lenderRecord?.principal ?? 0),
     interestShare: Number(lenderRecord?.interestAmount || 0),
     lenderStatus: loanEntry?.status || 'active',
+    interestStatus: lenderRecord?.status || 'pending',
     bankDetails: {
       accountNo,
       ifscCode,
@@ -79,7 +71,20 @@ const csvEscape = (value) => {
 
 const formatDate = (value) => {
   const date = asDate(value);
-  return date ? date.toISOString().split('T')[0] : '';
+  if (!date) return '';
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const year = String(date.getUTCFullYear());
+  return `${day}/${month}/${year}`;
+};
+
+const formatExcelTextIdentifier = (value) => {
+  const str = value == null ? '' : String(value).trim();
+  if (!str) return '';
+
+  // Force Excel to treat large/critical numeric identifiers as text.
+  // This preserves full digits and avoids scientific notation.
+  return `="${str.replace(/"/g, '""')}"`;
 };
 
 const sanitizeFileSegment = (value) => String(value || '')
@@ -124,23 +129,25 @@ export const getInterestRecordDetailsData = async (recordId) => {
     throw error;
   }
 
-  const lenderRecords = await InterestRecord.find({
+  const allLenderRecords = await InterestRecord.find({
     loanId: loan._id,
     lenderId: { $ne: null },
   })
-    .populate('lenderId', 'name surname')
+    .populate('lenderId', 'name surname ifscCode bankName +bankAccountNumber')
     .lean();
 
-  const lenderBreakdown = (loan.lenders || [])
-    .filter((entry) => entry?.lenderId)
-    .map((loanEntry) => {
-      const lenderRecord = findMatchingLenderRecord({
-        lenderRecords,
-        lenderId: loanEntry.lenderId?._id,
-        periodStart,
-        periodEnd,
-      });
+  const lenderRecordsForPeriod = allLenderRecords.filter((record) => samePeriod(record, periodStart, periodEnd));
 
+  const contributionByLender = new Map(
+    (loan.lenders || [])
+      .filter((entry) => entry?.lenderId?._id)
+      .map((entry) => [entry.lenderId._id.toString(), entry])
+  );
+
+  const lenderBreakdown = lenderRecordsForPeriod
+    .map((lenderRecord) => {
+      const lenderKey = lenderRecord?.lenderId?._id?.toString?.();
+      const loanEntry = lenderKey ? contributionByLender.get(lenderKey) : null;
       return toBreakdownRow({ loanEntry, lenderRecord });
     })
     .sort((a, b) => a.lenderName.localeCompare(b.lenderName));
@@ -187,11 +194,11 @@ export const generateInterestCSV = async (recordId, lenderId = null) => {
   }
 
   const header = [
-    'Borrower Name',
     'Loan ID',
+    'Borrower Name',
+    'Lender Name',
     'Interest Amount',
     'Due Date',
-    'Lender Name',
     'Lender Contribution',
     'Lender Bank Account No',
     'Lender IFSC',
@@ -201,13 +208,13 @@ export const generateInterestCSV = async (recordId, lenderId = null) => {
   const lines = [header.map(csvEscape).join(',')];
   rows.forEach((row) => {
     const line = [
-      details.borrower.borrowerName,
       details.borrower.loanId,
+      details.borrower.borrowerName,
+      row.lenderName,
       row.interestShare,
       formatDate(details.dueDate),
-      row.lenderName,
       row.contributionAmount,
-      row.bankDetails.accountNo,
+      formatExcelTextIdentifier(row.bankDetails.accountNo),
       row.bankDetails.ifscCode,
       row.bankDetails.bankName,
     ];

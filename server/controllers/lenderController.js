@@ -1,4 +1,5 @@
 import Lender from '../models/Lender.js';
+import Loan from '../models/Loan.js';
 
 export const createLender = async (req, res) => {
   try {
@@ -128,6 +129,35 @@ export const getLendersByFamilyGroup = async (req, res) => {
   }
 };
 
+export const deleteLender = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const lender = await Lender.findById(id).select('_id');
+    if (!lender) {
+      return res.status(404).json({ message: 'Lender not found' });
+    }
+
+    const hasActiveContributions = await Loan.exists({
+      lenders: {
+        $elemMatch: {
+          lenderId: id,
+          status: { $ne: 'closed' },
+        },
+      },
+    });
+
+    if (hasActiveContributions) {
+      return res.status(400).json({ message: 'Cannot delete lender with active loan contributions' });
+    }
+
+    await Lender.deleteOne({ _id: id });
+    return res.status(200).json({ message: 'Lender deleted successfully' });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 export default {
   createLender,
   getLenders,
@@ -135,4 +165,5 @@ export default {
   updateLender,
   searchLenders,
   getLendersByFamilyGroup,
+  deleteLender,
 };

@@ -3,9 +3,7 @@ import Borrower from '../models/Borrower.js';
 import Lender from '../models/Lender.js';
 import InterestRecord from '../models/InterestRecord.js';
 import InterestPayment from '../models/InterestPayment.js';
-import path from 'path';
-import { generateInterestRecords, generateSettlementInterest } from '../services/interestAutoGenerator.js';
-import { generateReceiptPdf, renderLenderSettlementReceiptHtml } from '../services/receiptService.js';
+import { generateInterestRecords } from '../services/interestAutoGenerator.js';
 
 const fullName = (person) => {
   if (!person) return '';
@@ -604,75 +602,10 @@ export const closeLenderContribution = async (req, res) => {
       return res.status(400).json({ message: 'This lender contribution is already closed' });
     }
 
-    const settledAt = new Date();
-    // Build historical schedule only up to day before settlement,
-    // so settlement creates the final record up to settledAt.
-    const asOfBeforeSettlement = new Date(settledAt.getTime() - (24 * 60 * 60 * 1000));
-    await generateInterestRecords({ loan: loan.toObject(), asOf: asOfBeforeSettlement, replaceExisting: false });
-
-    const lenderObjectId = entry?.lenderId?._id || entry?.lenderId;
-    if (!lenderObjectId) {
-      return res.status(400).json({ message: 'Invalid lender contribution: lender missing' });
-    }
-
-    const pendingLenderRecords = await InterestRecord.find({
-      loanId: loan._id,
-      lenderId: lenderObjectId,
-      status: 'pending',
-    });
-
-    const totalInterestPayable = pendingLenderRecords.reduce(
-      (sum, r) => sum + (Number(r?.interestAmount) || 0),
-      0
-    );
-
-    if (pendingLenderRecords.length > 0) {
-      const pendingIds = pendingLenderRecords.map((r) => r._id);
-      await InterestRecord.updateMany(
-        { _id: { $in: pendingIds } },
-        {
-          $set: {
-            status: 'paid',
-            paymentDate: settledAt,
-            amountReceived: null,
-            tdsAmount: null,
-            balanceAmount: null,
-            tdsPercent: 0,
-          },
-        }
-      );
-    }
-
-    // Add final settlement period records (lender + borrower).
-    const settlementInterest = await generateSettlementInterest({
-      loan: loan.toObject(),
-      lenderEntry: entry.toObject ? entry.toObject() : entry,
-      settlementDate: settledAt,
-    });
+    const closedAt = new Date();
 
     entry.status = 'closed';
-    entry.closedAt = settledAt;
-    entry.interestPaid = Math.round(
-      (Number(entry.interestPaid || 0) + totalInterestPayable + Number(settlementInterest?.lenderInterestAmount || 0)) * 100
-    ) / 100;
-
-    const lenderName = fullName(entry.lenderId);
-    const settlementReceiptHtml = renderLenderSettlementReceiptHtml({
-      loanPublicId: loan.loanId,
-      lenderName,
-      principalAmount: Number(entry.amountContributed) || 0,
-      totalInterestPaid: entry.interestPaid,
-      paymentDate: settledAt,
-    });
-
-    const { publicUrl } = await generateReceiptPdf({
-      outputDir: path.resolve(process.cwd(), 'receipts'),
-      publicBaseUrlPath: '/receipts',
-      html: settlementReceiptHtml,
-      fileNameBase: `lender-settlement-${loan.loanId}-${String(lenderObjectId)}`,
-    });
-
-    entry.settlementReceiptUrl = publicUrl;
+    entry.closedAt = closedAt;
 
     recomputeLoanOperationalStatus(loan);
 
@@ -681,16 +614,7 @@ export const closeLenderContribution = async (req, res) => {
     const populated = await Loan.findById(loan._id).populate('borrowerId').populate('lenders.lenderId');
 
     return res.status(200).json({
-      message: 'Lender settled successfully',
-      settlement: {
-        loanId: loan.loanId,
-        lenderName,
-        principalAmount: Number(entry.amountContributed) || 0,
-        totalInterestPaid: entry.interestPaid,
-        settlementInterestAdded: Number(settlementInterest?.lenderInterestAmount || 0),
-        paymentDate: settledAt,
-        receiptPdfUrl: publicUrl,
-      },
+      message: 'Lender contribution closed successfully. Existing interest records were preserved.',
       loan: populated,
     });
   } catch (error) {

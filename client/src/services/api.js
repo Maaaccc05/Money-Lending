@@ -42,6 +42,7 @@ export const borrowerAPI = {
   getAllGrouped: () => api.get('/borrowers/grouped'),
   getById: (id) => api.get(`/borrowers/${id}`),
   update: (id, data) => api.put(`/borrowers/${id}`, data),
+  delete: (id) => api.delete(`/borrowers/${id}`),
   search: (query) => api.get('/borrowers/search', { params: { query } }),
 };
 
@@ -52,6 +53,7 @@ export const lenderAPI = {
   getAllGrouped: () => api.get('/lenders', { params: { page: 1, limit: 500 } }),
   getById: (id) => api.get(`/lenders/${id}`),
   update: (id, data) => api.put(`/lenders/${id}`, data),
+  delete: (id) => api.delete(`/lenders/${id}`),
   search: (query) => api.get('/lenders/search', { params: { query } }),
   getByFamilyGroup: (familyGroup) => api.get('/lenders/family-group', { params: { familyGroup } }),
 };
@@ -90,6 +92,8 @@ export const interestAPI = {
       params: { lenderId },
       responseType: 'blob',
     }),
+  markLenderRecordPaid: (lenderRecordId) =>
+    api.patch(`/interest-records/${lenderRecordId}/mark-paid`),
   recordPayment: (data) => api.post('/interest/record-payment', data),
   getPayments: (page = 1, limit = 10) => api.get('/interest/payments', { params: { page, limit } }),
   getByLoan: (loanId) => api.get(`/interest/${loanId}`),

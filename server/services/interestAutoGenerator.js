@@ -200,6 +200,8 @@ const buildPeriodDocs = ({ loan, period, includeClosedLenders = false, status = 
   });
 
   const activePrincipal = activeLenders.reduce((sum, l) => sum + (Number(l.amountContributed) || 0), 0);
+  if (activePrincipal <= 0) return [];
+
   const borrowerCalc = calculatePeriodInterest({
     principal: activePrincipal,
     annualRatePct: loan.interestRateAnnual,

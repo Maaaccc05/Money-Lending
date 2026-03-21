@@ -26,6 +26,13 @@ const toInterestView = ({ record, loan }) => {
   return {
     _id: record._id,
     loanId: loan.loanId, // human-friendly loan id string
+    totalLoanAmount:
+      loan.totalLoanAmount
+      ?? loan.totalLoanamount
+      ?? record.totalLoanAmount
+      ?? record.principal
+      ?? record.principalAmount
+      ?? null,
     loanStartDate: loan.disbursementDate || null,
     borrowerName: fullName(loan.borrowerId),
     lenderName: isBorrowerRecord ? '' : fullName(record.lenderId),
@@ -62,6 +69,13 @@ const safeToInterestView = (record) => {
   return {
     _id: record?._id,
     loanId: record?.loanId?.loanId || record?.loanId?.toString?.() || '',
+    totalLoanAmount:
+      record?.loanId?.totalLoanAmount
+      ?? record?.loanId?.totalLoanamount
+      ?? record?.totalLoanAmount
+      ?? record?.principal
+      ?? record?.principalAmount
+      ?? null,
     loanStartDate: record?.loanId?.disbursementDate || null,
     borrowerName: record?.loanId?.borrowerId ? fullName(record.loanId.borrowerId) : '',
     lenderName: isBorrowerRecord ? '' : fullName(record?.lenderId),
@@ -105,6 +119,25 @@ const buildReceiptData = ({ loan, lender, record }) => {
     balanceAmount: record.balanceAmount ?? null,
     receiptDate: record.paymentDate || new Date(),
   };
+};
+
+const isLenderContributionClosed = (entry) => String(entry?.status || 'active').toLowerCase() === 'closed';
+
+const computeFundingStatus = (funded, total) => {
+  if (funded <= 0) return 'PENDING';
+  if (funded >= total) return 'FULLY_FUNDED';
+  return 'PARTIALLY_FUNDED';
+};
+
+const sameUtcDay = (left, right) => {
+  const a = left ? new Date(left) : null;
+  const b = right ? new Date(right) : null;
+  if (!a || !b || Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return false;
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
 };
 
 export const getAllInterestRecords = async (req, res) => {
@@ -473,6 +506,101 @@ export const getInterestRecordsByLoan = async (req, res) => {
   }
 };
 
+export const markLenderInterestRecordPaid = async (req, res) => {
+  try {
+    const { lenderId } = req.params;
+    const paidAt = new Date();
+
+    const record = await InterestRecord.findById(lenderId);
+    if (!record) {
+      return res.status(404).json({ message: 'Interest record not found' });
+    }
+    if (!record.lenderId) {
+      return res.status(400).json({ message: 'Only lender-level interest records can be marked paid from this endpoint' });
+    }
+
+    if (record.status !== 'paid') {
+      record.status = 'paid';
+      record.paymentDate = record.paymentDate || paidAt;
+      await record.save();
+    }
+
+    const loan = await Loan.findById(record.loanId);
+    if (loan) {
+      const lenderKey = String(record.lenderId);
+      let lenderWasClosed = false;
+
+      (loan.lenders || []).forEach((entry) => {
+        const entryLenderId = entry?.lenderId ? String(entry.lenderId) : '';
+        if (entryLenderId === lenderKey && !isLenderContributionClosed(entry)) {
+          entry.status = 'closed';
+          entry.closedAt = paidAt;
+          lenderWasClosed = true;
+        }
+      });
+
+      if (lenderWasClosed) {
+        const hasAnyLender = Array.isArray(loan.lenders) && loan.lenders.length > 0;
+        const allClosed = hasAnyLender && loan.lenders.every((entry) => isLenderContributionClosed(entry));
+        if (allClosed) {
+          loan.loanStatus = 'CLOSED';
+          loan.status = 'CLOSED';
+        } else {
+          loan.loanStatus = 'ACTIVE';
+          loan.status = computeFundingStatus(Number(loan.fundedAmount) || 0, Number(loan.totalLoanAmount) || 0);
+        }
+      }
+
+      await loan.save();
+    }
+
+    // If all lender records for this loan period are paid, mark the borrower-period record as paid too.
+    const periodStart = record.periodStart || record.startDate;
+    const periodEnd = record.periodEnd || record.endDate;
+
+    const periodLenderRecords = await InterestRecord.find({
+      loanId: record.loanId,
+      lenderId: { $ne: null },
+    }).select('_id periodStart periodEnd startDate endDate status');
+
+    const pendingInPeriod = periodLenderRecords.some((r) => {
+      const rStart = r.periodStart || r.startDate;
+      const rEnd = r.periodEnd || r.endDate;
+      return sameUtcDay(rStart, periodStart) && sameUtcDay(rEnd, periodEnd) && String(r.status) === 'pending';
+    });
+
+    if (!pendingInPeriod) {
+      await InterestRecord.updateMany(
+        {
+          loanId: record.loanId,
+          lenderId: null,
+          status: 'pending',
+          $or: [
+            { periodStart, periodEnd },
+            { startDate: periodStart, endDate: periodEnd },
+          ],
+        },
+        {
+          $set: {
+            status: 'paid',
+            paymentDate: paidAt,
+          },
+        }
+      );
+    }
+
+    return res.status(200).json({
+      message: 'Lender interest marked paid successfully',
+      recordId: record._id,
+      lenderId: record.lenderId,
+      status: 'paid',
+    });
+  } catch (error) {
+    console.error('Mark lender interest paid error:', error);
+    return res.status(500).json({ message: error.message || 'Failed to mark lender interest as paid' });
+  }
+};
+
 export const getInterestRecordDetails = async (req, res) => {
   try {
     const { id } = req.params;
@@ -510,4 +638,5 @@ export default {
   getInterestRecordsByLoan,
   getInterestRecordDetails,
   downloadInterestRecordCsv,
+  markLenderInterestRecordPaid,
 };
