@@ -4,6 +4,8 @@ import Loan from '../models/Loan.js';
 import path from 'path';
 import { generateCurrentPeriodInterest, generateCurrentPeriodInterestForAllLoans } from '../services/interestAutoGenerator.js';
 import { renderReceiptHtml, generateReceiptPdf } from '../services/receiptService.js';
+import { getInterestRecordDetailsData, generateInterestCSV } from '../services/interestCsvService.js';
+import { addDaysUtc, toUtcStartOfDay } from '../services/interestCalculator.js';
 
 const fullName = (person) => {
   if (!person) return '';
@@ -14,6 +16,7 @@ const fullName = (person) => {
 const toInterestView = ({ record, loan }) => {
   const startDate = record.periodStart || record.startDate;
   const endDate = record.periodEnd || record.endDate;
+  const dueDate = endDate;
   const days = record.days ?? record.daysCount;
 
   const isBorrowerRecord = !record.lenderId;
@@ -33,6 +36,7 @@ const toInterestView = ({ record, loan }) => {
     days,
     startDate,
     endDate,
+    dueDate,
     status: record.status,
     // keep for backward-compat consumers
     interestAmount: record.interestAmount,
@@ -50,6 +54,7 @@ const toInterestView = ({ record, loan }) => {
 const safeToInterestView = (record) => {
   const startDate = record?.periodStart || record?.startDate || null;
   const endDate = record?.periodEnd || record?.endDate || null;
+  const dueDate = endDate;
   const days = record?.days ?? record?.daysCount ?? null;
   const principal = record?.principal ?? record?.principalAmount ?? 0;
   const isBorrowerRecord = !record?.lenderId;
@@ -69,6 +74,7 @@ const safeToInterestView = (record) => {
     days,
     startDate,
     endDate,
+    dueDate,
     status: record?.status,
     interestAmount: record?.interestAmount,
 
@@ -109,8 +115,15 @@ export const getAllInterestRecords = async (req, res) => {
 
     await generateCurrentPeriodInterestForAllLoans({ asOf: new Date() });
 
+    const visibilityEnd = addDaysUtc(toUtcStartOfDay(new Date()), 10);
+
     const [records, total] = await Promise.all([
-      InterestRecord.find()
+      InterestRecord.find({
+        $or: [
+          { periodEnd: { $lte: visibilityEnd } },
+          { periodEnd: null, endDate: { $lte: visibilityEnd } },
+        ],
+      })
         .populate({
           path: 'loanId',
           select: 'loanId disbursementDate totalLoanAmount interestRateAnnual borrowerId',
@@ -121,7 +134,12 @@ export const getAllInterestRecords = async (req, res) => {
         .skip(skip)
         .limit(limit)
         .lean(),
-      InterestRecord.countDocuments(),
+      InterestRecord.countDocuments({
+        $or: [
+          { periodEnd: { $lte: visibilityEnd } },
+          { periodEnd: null, endDate: { $lte: visibilityEnd } },
+        ],
+      }),
     ]);
 
     const views = records.map((r) => {
@@ -204,12 +222,22 @@ export const getPendingInterest = async (req, res) => {
 
     await generateCurrentPeriodInterestForAllLoans({ asOf: new Date() });
 
+    const visibilityEnd = addDaysUtc(toUtcStartOfDay(new Date()), 10);
+
     let match = { status: 'pending', lenderId: { $ne: null } };
     if (scope === 'borrower') {
       match = { status: 'pending', lenderId: null };
     } else if (scope === 'all') {
       match = { status: 'pending' };
     }
+
+    match = {
+      ...match,
+      $or: [
+        { periodEnd: { $lte: visibilityEnd } },
+        { periodEnd: null, endDate: { $lte: visibilityEnd } },
+      ],
+    };
 
     const records = await InterestRecord.find(match)
       .populate({
@@ -445,6 +473,33 @@ export const getInterestRecordsByLoan = async (req, res) => {
   }
 };
 
+export const getInterestRecordDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const details = await getInterestRecordDetailsData(id);
+    return res.status(200).json(details);
+  } catch (error) {
+    console.error('Get interest details error:', error);
+    return res.status(error.status || 500).json({ message: error.message || 'Failed to fetch interest details' });
+  }
+};
+
+export const downloadInterestRecordCsv = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const lenderId = req.query.lenderId || null;
+
+    const result = await generateInterestCSV(id, lenderId);
+
+    res.setHeader('Content-Type', result.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${result.fileName}"`);
+    return res.status(200).send(result.csv);
+  } catch (error) {
+    console.error('Download interest CSV error:', error);
+    return res.status(error.status || 500).json({ message: error.message || 'Failed to generate CSV' });
+  }
+};
+
 export default {
   generateInterest,
   getAllInterestRecords,
@@ -453,4 +508,6 @@ export default {
   getInterestReceipt,
   getInterestPayments,
   getInterestRecordsByLoan,
+  getInterestRecordDetails,
+  downloadInterestRecordCsv,
 };

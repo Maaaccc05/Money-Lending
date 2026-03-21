@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { body, param } from 'express-validator';
+import { body, param, query } from 'express-validator';
 import interestController from '../controllers/interestController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import handleValidationErrors from '../middleware/validationMiddleware.js';
@@ -21,6 +21,23 @@ router.post(
 );
 
 router.get('/pending', interestController.getPendingInterest);
+
+router.get(
+  '/interest-records/:id/details',
+  [param('id').isMongoId().withMessage('Invalid interest record ID')],
+  handleValidationErrors,
+  interestController.getInterestRecordDetails
+);
+
+router.get(
+  '/interest-records/:id/csv',
+  [
+    param('id').isMongoId().withMessage('Invalid interest record ID'),
+    query('lenderId').optional().isMongoId().withMessage('Invalid lender ID'),
+  ],
+  handleValidationErrors,
+  interestController.downloadInterestRecordCsv
+);
 
 // Paginated list of interest records
 router.get('/', interestController.getAllInterestRecords);

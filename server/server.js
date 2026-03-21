@@ -8,6 +8,7 @@ import borrowerRoutes from './routes/borrowerRoutes.js';
 import lenderRoutes from './routes/lenderRoutes.js';
 import loanRoutes from './routes/loanRoutes.js';
 import interestRoutes from './routes/interestRoutes.js';
+import interestRecordRoutes from './routes/interestRecordRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import { startInterestCronJob } from './jobs/interestCron.js';
 import { startReceiptCronJob } from './jobs/receiptCron.js';
@@ -63,6 +64,7 @@ app.use('/api/borrowers', borrowerRoutes);
 app.use('/api/lenders', lenderRoutes);
 app.use('/api/loans', loanRoutes);
 app.use('/api/interest', interestRoutes);
+app.use('/api/interest-records', interestRecordRoutes);
 app.use('/api/reports', reportRoutes);
 
 // Serve generated receipt PDFs

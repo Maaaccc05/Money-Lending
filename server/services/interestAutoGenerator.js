@@ -1,6 +1,7 @@
 import InterestRecord from '../models/InterestRecord.js';
 import Loan from '../models/Loan.js';
 import {
+  addDaysUtc,
   calculatePeriodInterest,
   diffDaysInclusiveUtc,
   getCurrentInterestPeriodUtc,
@@ -30,6 +31,14 @@ const isSixMonthBoundaryEnd = (value) => {
   const month = d.getUTCMonth() + 1;
   const day = d.getUTCDate();
   return (month === 3 && day === 31) || (month === 9 && day === 30);
+};
+
+const getVisibilityWindowEnd = (currentDate) => {
+  const asOf = toUtcStartOfDay(currentDate);
+  if (!asOf) return null;
+  // Visible from 10 days before due: current >= (periodEnd - 10)
+  // Equivalent boundary for period end: periodEnd <= current + 10.
+  return addDaysUtc(asOf, 10);
 };
 
 const buildLenderDocForPeriod = ({ loan, lenderEntry, period, days, interestAmount, status = 'pending' }) => {
@@ -160,6 +169,24 @@ export const generatePeriods = (loan, today = new Date()) => {
   return periods;
 };
 
+export const getVisibleInterestRecords = (loan, currentDate = new Date()) => {
+  const periods = generatePeriods(loan, currentDate);
+  const asOf = toUtcStartOfDay(currentDate);
+  if (!asOf) return [];
+
+  return periods
+    .filter((p) => {
+      const visibleFrom = addDaysUtc(p.periodEnd, -10);
+      return visibleFrom && asOf.getTime() >= visibleFrom.getTime();
+    })
+    .map((p) => ({
+      periodStart: p.periodStart,
+      periodEnd: p.periodEnd,
+      dueDate: p.periodEnd,
+      visibleFrom: addDaysUtc(p.periodEnd, -10),
+    }));
+};
+
 const buildPeriodDocs = ({ loan, period, includeClosedLenders = false, status = 'pending' }) => {
   const days = diffDaysInclusiveUtc(period.periodStart, period.periodEnd);
   if (!days || days <= 0) return [];
@@ -239,6 +266,9 @@ const keyForDoc = (doc) => {
 export const generatePastInterest = async ({ loan, asOf = new Date(), replaceExisting = false } = {}) => {
   if (!loan?._id) throw new Error('generatePastInterest requires a loan document');
   const cycleMonths = Number(loan.interestPeriodMonths);
+  const asOfUtc = toUtcStartOfDay(asOf);
+  const visibilityEnd = getVisibilityWindowEnd(asOfUtc);
+  if (!asOfUtc || !visibilityEnd) throw new Error('Invalid asOf date for due-based interest generation');
 
   if (loan?.loanStatus === 'CLOSED' || loan?.status === 'CLOSED') {
     return {
@@ -261,8 +291,22 @@ export const generatePastInterest = async ({ loan, asOf = new Date(), replaceExi
     throw new Error('Invalid funding state: FULLY_FUNDED loans must have contributions equal to total loan amount');
   }
 
-  const periods = generatePeriods(loan, asOf);
+  const visiblePeriods = getVisibleInterestRecords(loan, asOfUtc);
+  const periods = visiblePeriods.map((p) => ({ periodStart: p.periodStart, periodEnd: p.periodEnd }));
   if (periods.length === 0) {
+    if (replaceExisting) {
+      await InterestRecord.deleteMany({ loanId: loan._id });
+    } else {
+      // Keep reminders due-only: drop not-yet-visible pending rows if they exist from old runs.
+      await InterestRecord.deleteMany({
+        loanId: loan._id,
+        status: 'pending',
+        $or: [
+          { periodEnd: { $gt: visibilityEnd } },
+          { periodEnd: null, endDate: { $gt: visibilityEnd } },
+        ],
+      });
+    }
     return {
       borrowerRecordsCreated: 0,
       lenderRecordsCreated: 0,
@@ -279,6 +323,17 @@ export const generatePastInterest = async ({ loan, asOf = new Date(), replaceExi
     const del = await InterestRecord.deleteMany({ loanId: loan._id });
     deletedRecords = Number(del?.deletedCount || 0);
   } else {
+    // Keep reminders due-only: drop not-yet-visible pending rows if they exist from old runs.
+    const delFuturePending = await InterestRecord.deleteMany({
+      loanId: loan._id,
+      status: 'pending',
+      $or: [
+        { periodEnd: { $gt: visibilityEnd } },
+        { periodEnd: null, endDate: { $gt: visibilityEnd } },
+      ],
+    });
+    deletedRecords += Number(delFuturePending?.deletedCount || 0);
+
     if (cycleMonths === 6) {
       // Repair legacy rows where 6-month pending record endDate was saved as "today"
       // instead of cycle boundary (Mar 31 / Sep 30).
@@ -477,6 +532,7 @@ export const generateDueInterestForAllLoans = async ({ asOf = new Date() } = {})
 
 export default {
   generatePeriods,
+  getVisibleInterestRecords,
   generateInterestSchedule,
   generatePastInterest,
   generateSettlementInterest,

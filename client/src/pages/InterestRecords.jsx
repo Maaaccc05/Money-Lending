@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Sidebar, Navbar } from '../components/index';
 import { interestAPI } from '../services/api';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Download, Eye, X } from 'lucide-react';
 
 const formatINR = (value) => {
   const n = Number(value);
@@ -14,6 +14,23 @@ const formatDate = (value) => {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '-';
   return d.toLocaleDateString('en-IN');
+};
+
+const getFileNameFromDisposition = (value) => {
+  if (!value) return null;
+  const match = value.match(/filename="?([^\";]+)"?/i);
+  return match?.[1] || null;
+};
+
+const downloadBlobFile = (blob, fileName) => {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 };
 
 const StatusBadge = ({ status }) => {
@@ -37,6 +54,11 @@ export const InterestRecords = () => {
   const [error, setError] = useState('');
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState('');
+  const [detailsData, setDetailsData] = useState(null);
+  const [csvLoadingLenderId, setCsvLoadingLenderId] = useState(null);
 
   useEffect(() => {
     fetchPendingInterest();
@@ -76,6 +98,47 @@ export const InterestRecords = () => {
       await fetchPendingInterest();
     } catch (err) {
       setError('Failed to record interest payment');
+    }
+  };
+
+  const handleViewDetails = async (recordId) => {
+    setIsDetailsOpen(true);
+    setDetailsLoading(true);
+    setDetailsError('');
+    setDetailsData(null);
+
+    try {
+      const { data } = await interestAPI.getRecordDetails(recordId);
+      setDetailsData(data);
+    } catch (err) {
+      setDetailsError(err?.response?.data?.message || 'Failed to fetch interest details');
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const closeDetailsModal = () => {
+    setIsDetailsOpen(false);
+    setDetailsLoading(false);
+    setDetailsError('');
+    setDetailsData(null);
+    setCsvLoadingLenderId(null);
+  };
+
+  const handleDownloadCsv = async (lender) => {
+    if (!detailsData?.recordId || !lender?.lenderId || !lender?.canDownloadCsv) return;
+
+    setCsvLoadingLenderId(lender.lenderId);
+    try {
+      const response = await interestAPI.downloadRecordCsv(detailsData.recordId, lender.lenderId);
+      const disposition = response.headers?.['content-disposition'];
+      const fileName = getFileNameFromDisposition(disposition)
+        || `interest-${detailsData?.borrower?.loanId || 'record'}-${lender.lenderName || 'lender'}.csv`;
+      downloadBlobFile(response.data, fileName);
+    } catch (err) {
+      setDetailsError(err?.response?.data?.message || 'Failed to download CSV');
+    } finally {
+      setCsvLoadingLenderId(null);
     }
   };
 
@@ -172,15 +235,25 @@ export const InterestRecords = () => {
                             <StatusBadge status={row.status} />
                           </td>
                           <td className="px-6 py-4 text-sm">
-                            {String(row.status || '').toLowerCase() === 'pending' && (
+                            <div className="flex items-center gap-3">
                               <button
                                 type="button"
-                                onClick={() => handleMarkPaid(row._id)}
-                                className="text-green-600 hover:text-green-800 text-xs font-semibold"
+                                onClick={() => handleViewDetails(row._id)}
+                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-semibold"
                               >
-                                Mark Paid
+                                <Eye size={14} />
+                                View Details
                               </button>
-                            )}
+                              {String(row.status || '').toLowerCase() === 'pending' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkPaid(row._id)}
+                                  className="text-green-600 hover:text-green-800 text-xs font-semibold"
+                                >
+                                  Mark Paid
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -217,15 +290,25 @@ export const InterestRecords = () => {
                             <StatusBadge status={row.status} />
                           </td>
                           <td className="px-6 py-4 text-sm">
-                            {String(row.status || '').toLowerCase() === 'pending' && (
+                            <div className="flex items-center gap-3">
                               <button
                                 type="button"
-                                onClick={() => handleMarkPaid(row._id)}
-                                className="text-green-600 hover:text-green-800 text-xs font-semibold"
+                                onClick={() => handleViewDetails(row._id)}
+                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-semibold"
                               >
-                                Mark Paid
+                                <Eye size={14} />
+                                View Details
                               </button>
-                            )}
+                              {String(row.status || '').toLowerCase() === 'pending' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkPaid(row._id)}
+                                  className="text-green-600 hover:text-green-800 text-xs font-semibold"
+                                >
+                                  Mark Paid
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -266,11 +349,114 @@ export const InterestRecords = () => {
             </div>
           ) : (
             <div className="text-center py-12 text-gray-600 bg-white rounded-lg">
-              No pending interest records found
+              <p>No pending interest records found</p>
+              <p className="text-sm text-gray-500 mt-2">
+                Interest records appear only when the due date is within the next 10 days.
+              </p>
             </div>
           )}
         </div>
       </div>
+
+      {isDetailsOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 px-4 py-8 overflow-y-auto">
+          <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-xl">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Interest Record Details</h3>
+              <button
+                type="button"
+                onClick={closeDetailsModal}
+                className="p-1 rounded hover:bg-gray-100 text-gray-600"
+                aria-label="Close details"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {detailsLoading && <p className="text-sm text-gray-600">Loading details...</p>}
+
+              {!detailsLoading && detailsError && (
+                <div className="bg-red-100 text-red-700 p-3 rounded text-sm">{detailsError}</div>
+              )}
+
+              {!detailsLoading && !detailsError && detailsData && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                    <div className="bg-gray-50 rounded p-3">
+                      <p className="text-gray-500">Borrower Name</p>
+                      <p className="font-semibold text-gray-900">{detailsData?.borrower?.borrowerName || '-'}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded p-3">
+                      <p className="text-gray-500">Loan ID</p>
+                      <p className="font-semibold text-gray-900">{detailsData?.borrower?.loanId || '-'}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded p-3">
+                      <p className="text-gray-500">Total Loan Amount</p>
+                      <p className="font-semibold text-gray-900">{formatINR(detailsData?.borrower?.totalLoanAmount)}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded p-3">
+                      <p className="text-gray-500">Interest Amount</p>
+                      <p className="font-semibold text-gray-900">{formatINR(detailsData?.borrower?.interestAmount)}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded p-3">
+                      <p className="text-gray-500">Due Date</p>
+                      <p className="font-semibold text-gray-900">{formatDate(detailsData?.dueDate)}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-800 mb-3">Lender Breakdown</h4>
+                    <div className="overflow-x-auto border rounded-lg">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 border-b">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-semibold text-gray-700">Lender Name</th>
+                            <th className="px-4 py-3 text-left font-semibold text-gray-700">Contribution</th>
+                            <th className="px-4 py-3 text-left font-semibold text-gray-700">Interest Share</th>
+                            <th className="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
+                            <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {(detailsData?.lenderBreakdown || []).map((lender) => (
+                            <tr key={lender.lenderId || lender.lenderName}>
+                              <td className="px-4 py-3 text-gray-900">{lender.lenderName || '-'}</td>
+                              <td className="px-4 py-3 text-gray-900">{formatINR(lender.contributionAmount)}</td>
+                              <td className="px-4 py-3 font-semibold text-gray-900">{formatINR(lender.interestShare)}</td>
+                              <td className="px-4 py-3 text-gray-700 capitalize">{lender.lenderStatus || '-'}</td>
+                              <td className="px-4 py-3">
+                                <button
+                                  type="button"
+                                  disabled={!lender.canDownloadCsv || csvLoadingLenderId === lender.lenderId}
+                                  onClick={() => handleDownloadCsv(lender)}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border ${
+                                    lender.canDownloadCsv
+                                      ? 'border-blue-200 text-blue-700 hover:bg-blue-50'
+                                      : 'border-gray-200 text-gray-400 cursor-not-allowed'
+                                  }`}
+                                >
+                                  <Download size={13} />
+                                  {csvLoadingLenderId === lender.lenderId ? 'Downloading...' : 'Download CSV'}
+                                </button>
+                                {!lender.canDownloadCsv && (
+                                  <p className="mt-1 text-xs text-red-600">
+                                    Missing: {(lender.missingFields || []).join(', ')}
+                                  </p>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

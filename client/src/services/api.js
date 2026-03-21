@@ -84,6 +84,12 @@ export const interestAPI = {
   list: (page = 1, limit = 10) => api.get('/interest', { params: { page, limit } }),
   getPending: (page = 1, limit = 10, scope = 'lender') =>
     api.get('/interest/pending', { params: { page, limit, scope } }),
+  getRecordDetails: (recordId) => api.get(`/interest-records/${recordId}/details`),
+  downloadRecordCsv: (recordId, lenderId) =>
+    api.get(`/interest-records/${recordId}/csv`, {
+      params: { lenderId },
+      responseType: 'blob',
+    }),
   recordPayment: (data) => api.post('/interest/record-payment', data),
   getPayments: (page = 1, limit = 10) => api.get('/interest/payments', { params: { page, limit } }),
   getByLoan: (loanId) => api.get(`/interest/${loanId}`),
