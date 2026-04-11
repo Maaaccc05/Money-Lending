@@ -59,17 +59,10 @@ const EditBorrowerModal = ({ borrower, onClose, onSave }) => {
   const validate = () => {
     const errs = {};
     if (!formData.name.trim()) errs.name = 'Name is required';
-    if (!formData.surname.trim()) errs.surname = 'Surname is required';
-    if (!formData.familyGroup.trim()) errs.familyGroup = 'Family group is required';
-    if (!formData.dob) errs.dob = 'Date of birth is required';
-    if (!formData.address.trim()) errs.address = 'Address is required';
     if (formData.panNumber && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(formData.panNumber.toUpperCase()))
       errs.panNumber = 'PAN must be in format: ABCDE1234F';
     if (formData.aadhaarNumber && !/^[0-9]{12}$/.test(formData.aadhaarNumber))
       errs.aadhaarNumber = 'Aadhaar must be exactly 12 digits';
-    if (!formData.ifscCode.trim()) errs.ifscCode = 'IFSC code is required';
-    if (!formData.bankName.trim()) errs.bankName = 'Bank name is required';
-    if (!formData.branch.trim()) errs.branch = 'Branch is required';
     return errs;
   };
 
@@ -139,19 +132,19 @@ const EditBorrowerModal = ({ borrower, onClose, onSave }) => {
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {field('Name', 'name')}
-            {field('Surname', 'surname')}
-            {field('Family Group', 'familyGroup')}
-            {field('Date of Birth', 'dob', 'date')}
-            {field('PAN Number (leave blank to keep existing)', 'panNumber', 'text', { placeholder: 'ABCDE1234F', maxLength: 10 })}
-            {field('Aadhaar Number (leave blank to keep existing)', 'aadhaarNumber', 'text', { placeholder: '12-digit number', maxLength: 12 })}
-            {field('Bank Account (leave blank to keep existing)', 'bankAccountNumber')}
-            {field('IFSC Code', 'ifscCode')}
-            {field('Bank Name', 'bankName')}
-            {field('Branch', 'branch')}
+            {field('Name *', 'name')}
+            {field('Surname (optional)', 'surname')}
+            {field('Family Group (optional)', 'familyGroup')}
+            {field('Date of Birth (optional)', 'dob', 'date')}
+            {field('PAN Number (optional – leave blank to keep existing)', 'panNumber', 'text', { placeholder: 'ABCDE1234F', maxLength: 10 })}
+            {field('Aadhaar Number (optional – leave blank to keep existing)', 'aadhaarNumber', 'text', { placeholder: '12-digit number', maxLength: 12 })}
+            {field('Bank Account (optional – leave blank to keep existing)', 'bankAccountNumber')}
+            {field('IFSC Code (optional)', 'ifscCode')}
+            {field('Bank Name (optional)', 'bankName')}
+            {field('Branch (optional)', 'branch')}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Address <span className="text-gray-400 text-xs font-normal">(optional)</span></label>
             <textarea
               name="address"
               value={formData.address}
@@ -254,7 +247,7 @@ const FamilyGroupSection = ({ groupName, borrowers, onEdit, onDelete }) => {
                 {borrowers.map((b) => (
                   <tr key={b._id} className="hover:bg-blue-50/30 transition-colors">
                     <td className="px-6 py-3.5 text-sm font-medium text-gray-900 truncate">{b.name} {b.surname}</td>
-                    <td className="px-6 py-3.5 text-sm text-gray-600 whitespace-nowrap">{new Date(b.dob).toLocaleDateString('en-IN')}</td>
+                    <td className="px-6 py-3.5 text-sm text-gray-600 whitespace-nowrap">{b.dob ? new Date(b.dob).toLocaleDateString('en-IN') : '—'}</td>
                     <td className="px-6 py-3.5 text-sm text-gray-600 truncate">{b.bankName}</td>
                     <td className="px-6 py-3.5 text-sm text-gray-600 truncate">{b.branch}</td>
                     <td className="px-6 py-3.5 align-middle">

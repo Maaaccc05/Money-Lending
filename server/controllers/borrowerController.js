@@ -3,7 +3,12 @@ import Loan from '../models/Loan.js';
 
 export const createBorrower = async (req, res) => {
   try {
-    const borrower = new Borrower(req.body);
+    const body = { ...req.body };
+    // Auto-assign familyGroup from surname if not provided
+    if (!body.familyGroup && body.surname) {
+      body.familyGroup = body.surname.trim();
+    }
+    const borrower = new Borrower(body);
     await borrower.save();
 
     res.status(201).json({
@@ -64,7 +69,20 @@ export const getBorrowerById = async (req, res) => {
 
 export const updateBorrower = async (req, res) => {
   try {
-    const borrower = await Borrower.findByIdAndUpdate(req.params.id, req.body, {
+    const updateData = { ...req.body };
+
+    // Auto-assign familyGroup from surname during edit if:
+    // - no familyGroup is being explicitly set
+    // - but a surname is being set
+    if (!updateData.familyGroup && updateData.surname) {
+      // Also check existing record to avoid overwriting an existing familyGroup
+      const existing = await Borrower.findById(req.params.id).select('familyGroup');
+      if (!existing?.familyGroup) {
+        updateData.familyGroup = updateData.surname.trim();
+      }
+    }
+
+    const borrower = await Borrower.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
       runValidators: true,
     }).select('-panNumber -aadhaarNumber -bankAccountNumber');

@@ -13,22 +13,25 @@ router.post(
   '/',
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
-    body('surname').trim().notEmpty().withMessage('Surname is required'),
-    body('familyGroup').trim().notEmpty().withMessage('Family group is required'),
-    body('dob').isISO8601().withMessage('Valid date of birth is required'),
-    body('address').trim().notEmpty().withMessage('Address is required'),
+    body('surname').optional({ checkFalsy: true }).trim(),
+    body('familyGroup').optional({ checkFalsy: true }).trim(),
+    body('dob').optional({ checkFalsy: true }).isISO8601().withMessage('Valid date of birth required if provided'),
+    body('address').optional({ checkFalsy: true }).trim(),
     body('panNumber')
+      .optional({ checkFalsy: true })
       .trim()
+      .toUpperCase()
       .matches(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/)
-      .withMessage('Valid PAN number is required'),
+      .withMessage('PAN must be in format: ABCDE1234F'),
     body('aadhaarNumber')
+      .optional({ checkFalsy: true })
       .trim()
       .matches(/^[0-9]{12}$/)
-      .withMessage('Valid 12-digit Aadhaar number is required'),
-    body('bankAccountNumber').trim().notEmpty().withMessage('Bank account number is required'),
-    body('ifscCode').trim().notEmpty().withMessage('IFSC code is required'),
-    body('bankName').trim().notEmpty().withMessage('Bank name is required'),
-    body('branch').trim().notEmpty().withMessage('Branch is required'),
+      .withMessage('Aadhaar must be exactly 12 digits'),
+    body('bankAccountNumber').optional({ checkFalsy: true }).trim(),
+    body('ifscCode').optional({ checkFalsy: true }).trim(),
+    body('bankName').optional({ checkFalsy: true }).trim(),
+    body('branch').optional({ checkFalsy: true }).trim(),
   ],
   handleValidationErrors,
   lenderController.createLender
@@ -51,25 +54,26 @@ router.put(
   '/:id',
   [
     param('id').isMongoId().withMessage('Invalid lender ID'),
-    body('name').optional().trim().notEmpty().withMessage('Name cannot be empty'),
-    body('surname').optional().trim().notEmpty().withMessage('Surname cannot be empty'),
-    body('familyGroup').optional().trim().notEmpty().withMessage('Family group cannot be empty'),
-    body('dob').optional().isISO8601().withMessage('Valid date of birth is required'),
-    body('address').optional().trim().notEmpty().withMessage('Address cannot be empty'),
+    body('name').optional({ checkFalsy: true }).trim().notEmpty().withMessage('Name cannot be empty'),
+    body('surname').optional({ checkFalsy: true }).trim(),
+    body('familyGroup').optional({ checkFalsy: true }).trim(),
+    body('dob').optional({ checkFalsy: true }).isISO8601().withMessage('Valid date of birth required if provided'),
+    body('address').optional({ checkFalsy: true }).trim(),
     body('panNumber')
-      .optional()
+      .optional({ checkFalsy: true })
       .trim()
+      .toUpperCase()
       .matches(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/)
-      .withMessage('Valid PAN number is required'),
+      .withMessage('PAN must be in format: ABCDE1234F'),
     body('aadhaarNumber')
-      .optional()
+      .optional({ checkFalsy: true })
       .trim()
       .matches(/^[0-9]{12}$/)
-      .withMessage('Valid 12-digit Aadhaar number is required'),
-    body('bankAccountNumber').optional().trim().notEmpty().withMessage('Bank account number cannot be empty'),
-    body('ifscCode').optional().trim().notEmpty().withMessage('IFSC code cannot be empty'),
-    body('bankName').optional().trim().notEmpty().withMessage('Bank name cannot be empty'),
-    body('branch').optional().trim().notEmpty().withMessage('Branch cannot be empty'),
+      .withMessage('Aadhaar must be exactly 12 digits'),
+    body('bankAccountNumber').optional({ checkFalsy: true }).trim(),
+    body('ifscCode').optional({ checkFalsy: true }).trim(),
+    body('bankName').optional({ checkFalsy: true }).trim(),
+    body('branch').optional({ checkFalsy: true }).trim(),
   ],
   handleValidationErrors,
   lenderController.updateLender
